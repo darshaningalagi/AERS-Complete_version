@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AERS Analytics Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#F8FAFC;--surface:#FFFFFF;--card:#FFFFFF;
+  --border:#E2E8F0;--border2:#CBD5E1;
+  --text:#0F172A;--muted:#64748B;--dim:#94A3B8;
+  --red:#DC2626;--red-bg:#FEF2F2;--red-light:#FECACA;
+  --amber:#D97706;--amber-bg:#FFFBEB;--amber-light:#FDE68A;
+  --green:#16A34A;--green-bg:#F0FDF4;--green-light:#BBF7D0;
+  --blue:#1D4ED8;--blue-bg:#EFF6FF;--blue-light:#BFDBFE;
+  --font:'Segoe UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh}
+
+/* Header */
+.hdr{background:var(--surface);border-bottom:1px solid var(--border);
+  padding:0 24px;height:54px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:50;}
+.hdr-left{display:flex;align-items:center;gap:12px}
+.hdr-icon{width:30px;height:30px;background:var(--blue-bg);border-radius:8px;border:1px solid var(--blue-light);
+  display:flex;align-items:center;justify-content:center;font-size:15px}
+.hdr-title{font-size:14px;font-weight:700}
+.hdr-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.nav{display:flex;gap:6px}
+.nav a{font-size:12px;padding:5px 12px;border:1px solid var(--border);border-radius:7px;
+  color:var(--muted);text-decoration:none;transition:.15s}
+.nav a:hover,.nav a.active{background:var(--blue-bg);border-color:var(--blue-light);color:var(--blue)}
+.live-badge{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--green);
+  background:var(--green-bg);border:1px solid var(--green-light);padding:3px 10px;border-radius:20px}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Layout */
+.page{max-width:1400px;margin:0 auto;padding:20px 16px;display:flex;flex-direction:column;gap:16px}
+
+/* Metric cards */
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.mc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.mc-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+.mc-val{font-size:28px;font-weight:700}
+.mc-val.red{color:var(--red)}.mc-val.amber{color:var(--amber)}
+.mc-val.green{color:var(--green)}.mc-val.blue{color:var(--blue)}
+.mc-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.mc-bar{height:3px;border-radius:2px;margin-top:8px;background:var(--border)}
+.mc-bar-fill{height:100%;border-radius:2px;transition:width .6s}
+
+/* Chart grid */
+.chart-grid{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.chart-grid2{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.card-hdr{padding:12px 16px;border-bottom:1px solid var(--border);background:#F8FAFC;
+  font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;
+  display:flex;align-items:center;justify-content:space-between}
+.card-body{padding:16px}
+.chart-wrap{position:relative;height:220px}
+
+/* Risk donut numbers */
+.risk-nums{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.risk-row{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;
+  border-radius:8px;border:1px solid var(--border)}
+.risk-row.c{background:var(--red-bg);border-color:var(--red-light)}
+.risk-row.u{background:var(--amber-bg);border-color:var(--amber-light)}
+.risk-row.l{background:var(--green-bg);border-color:var(--green-light)}
+.risk-name{font-size:12px;font-weight:600}
+.risk-name.c{color:var(--red)}.risk-name.u{color:var(--amber)}.risk-name.l{color:var(--green)}
+.risk-count{font-size:18px;font-weight:700}
+.risk-count.c{color:var(--red)}.risk-count.u{color:var(--amber)}.risk-count.l{color:var(--green)}
+.risk-pct{font-size:11px;color:var(--muted)}
+
+/* Hospital / specialty bars */
+.bar-list{display:flex;flex-direction:column;gap:8px}
+.bar-item{}
+.bar-meta{display:flex;justify-content:space-between;margin-bottom:4px}
+.bar-name{font-size:12px;color:var(--text)}
+.bar-cnt{font-size:12px;font-weight:600;color:var(--blue)}
+.bar-track{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;background:var(--blue);transition:width .6s}
+
+/* Case history table */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{padding:9px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);
+  background:#F8FAFC;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#F8FAFC}
+.risk-tag{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600}
+.rt-Critical{background:var(--red-bg);color:var(--red);border:1px solid var(--red-light)}
+.rt-Urgent{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-light)}
+.rt-Low{background:var(--green-bg);color:var(--green);border:1px solid var(--green-light)}
+.mono{font-family:monospace;font-size:11px;color:var(--muted)}
+.trunc{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* WS feed */
+.ws-feed{height:140px;overflow-y:auto;padding:10px;background:#F8FAFC;
+  border-radius:8px;border:1px solid var(--border);font-family:monospace;font-size:11px}
+.ws-line{padding:2px 0;color:var(--muted);border-bottom:1px solid var(--border);line-height:1.5}
+.ws-line:last-child{border:none}
+.ws-line .ts{color:var(--dim)}
+.ws-line.crit .msg{color:var(--red)}.ws-line.urg .msg{color:var(--amber)}
+.ws-line.low .msg{color:var(--green)}
+
+/* Empty / loading */
+.empty-msg{padding:24px;text-align:center;color:var(--muted);font-size:13px}
+.spinner-sm{width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--blue);
+  border-radius:50%;animation:spin .7s linear infinite;display:inline-block;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:900px){
+  .metrics{grid-template-columns:repeat(2,1fr)}
+  .chart-grid{grid-template-columns:1fr}
+  .chart-grid2{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-left">
+    <div class="hdr-icon">📊</div>
+    <div>
+      <div class="hdr-title">AERS Analytics</div>
+      <div class="hdr-sub">Persistent case history · Live statistics</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <a href="/">Main System</a>
+    <a href="/simulator">Simulator</a>
+    <a href="/analytics" class="active">Analytics</a>
+    <a href="/docs">API Docs</a>
+  </nav>
+  <div class="live-badge"><div class="live-dot"></div><span id="ws-status">Connecting...</span></div>
+</div>
+
+<div class="page">
+
+  <!-- Metrics row -->
+  <div class="metrics">
+    <div class="mc">
+      <div class="mc-label">Total Cases</div>
+      <div class="mc-val blue" id="m-total">—</div>
+      <div class="mc-sub">all time (SQLite)</div>
+    </div>
+    <div class="mc">
+      <div class="mc-label">Critical</div>
+      <div class="mc-val red" id="m-crit">—</div>
+      <div class="mc-sub">immediate response</div>
+      <div class="mc-bar"><div class="mc-bar-fill" id="b-crit" style="background:var(--red)"></div></div>
+    </div>
+    <div class="mc">
+      <div class="mc-label">Urgent</div>
+      <div class="mc-val amber" id="m-urg">—</div>
+      <div class="mc-sub">10 min response</div>
+      <div class="mc-bar"><div class="mc-bar-fill" id="b-urg" style="background:var(--amber)"></div></div>
+    </div>
+    <div class="mc">
+      <div class="mc-label">Low Risk</div>
+      <div class="mc-val green" id="m-low">—</div>
+      <div class="mc-sub">standard response</div>
+      <div class="mc-bar"><div class="mc-bar-fill" id="b-low" style="background:var(--green)"></div></div>
+    </div>
+    <div class="mc">
+      <div class="mc-label">Model Accuracy</div>
+      <div class="mc-val" id="m-acc" style="color:var(--text)">—</div>
+      <div class="mc-sub">sim vs expected</div>
+    </div>
+  </div>
+
+  <!-- Charts row 1 -->
+  <div class="chart-grid">
+    <div class="card">
+      <div class="card-hdr">
+        <span>Cases over time (last 7 days)</span>
+        <span id="avg-eta" style="font-size:10px;color:var(--muted)">avg ETA: —</span>
+      </div>
+      <div class="card-body"><div class="chart-wrap"><canvas id="daily-chart"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span>Risk distribution</span></div>
+      <div class="card-body">
+        <div class="chart-wrap" style="height:160px"><canvas id="donut-chart"></canvas></div>
+        <div class="risk-nums">
+          <div class="risk-row c"><span class="risk-name c">Critical</span><div style="display:flex;align-items:baseline;gap:8px"><span class="risk-count c" id="rc-crit">0</span><span class="risk-pct" id="rp-crit">0%</span></div></div>
+          <div class="risk-row u"><span class="risk-name u">Urgent</span><div style="display:flex;align-items:baseline;gap:8px"><span class="risk-count u" id="rc-urg">0</span><span class="risk-pct" id="rp-urg">0%</span></div></div>
+          <div class="risk-row l"><span class="risk-name l">Low</span><div style="display:flex;align-items:baseline;gap:8px"><span class="risk-count l" id="rc-low">0</span><span class="risk-pct" id="rp-low">0%</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts row 2 -->
+  <div class="chart-grid2">
+    <div class="card">
+      <div class="card-hdr"><span>Hourly activity (last 24h)</span></div>
+      <div class="card-body"><div class="chart-wrap"><canvas id="hourly-chart"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span>Top hospitals by cases</span></div>
+      <div class="card-body"><div class="bar-list" id="hosp-bars"><div class="empty-msg">No data</div></div></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span>Specialties requested</span></div>
+      <div class="card-body"><div class="bar-list" id="spec-bars"><div class="empty-msg">No data</div></div></div>
+    </div>
+  </div>
+
+  <!-- Live WS feed -->
+  <div class="card">
+    <div class="card-hdr">
+      <span>Live case feed (WebSocket)</span>
+      <span id="ws-count" style="font-size:10px;color:var(--muted)">0 received</span>
+    </div>
+    <div class="card-body" style="padding:10px">
+      <div class="ws-feed" id="ws-feed">
+        <div class="ws-line"><span class="ts">--:--:--</span> <span class="msg">Waiting for live cases...</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Case history table -->
+  <div class="card">
+    <div class="card-hdr">
+      <span>Case history (last 100 from database)</span>
+      <button onclick="loadData()" style="font-size:10px;padding:3px 10px;border:1px solid var(--border2);border-radius:6px;background:white;cursor:pointer;color:var(--muted)">↻ Refresh</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Case ID</th><th>Time</th><th>Risk</th><th>Confidence</th>
+          <th>Description</th><th>Ambulance</th><th>Hospital</th><th>Specialty</th>
+        </tr></thead>
+        <tbody id="case-tbody"><tr><td colspan="8" class="empty-msg"><span class="spinner-sm"></span>Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = window.location.origin;
+let dailyChart, donutChart, hourlyChart;
+let wsCount = 0;
+
+// ── WebSocket ──────────────────────────────────────────────────────────
+function connectWS() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => {
+    document.getElementById('ws-status').textContent = 'Live';
+    document.getElementById('ws-status').style.color = 'var(--green)';
+  };
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'new_case') {
+        wsCount++;
+        document.getElementById('ws-count').textContent = wsCount + ' received';
+        addWsFeedLine(msg.data);
+        // Refresh metrics after a short delay
+        setTimeout(loadData, 800);
+      }
+    } catch (_) {}
+  };
+  ws.onclose = () => {
+    document.getElementById('ws-status').textContent = 'Reconnecting...';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function addWsFeedLine(d) {
+  const feed = document.getElementById('ws-feed');
+  const t = new Date().toLocaleTimeString();
+  const cls = d.risk === 'Critical' ? 'crit' : d.risk === 'Urgent' ? 'urg' : 'low';
+  const line = `<div class="ws-line ${cls}"><span class="ts">${t}</span> <span class="msg">${d.case_id} — ${d.risk} (${d.confidence}%) — ${d.ambulance || '?'} → ${(d.hospital || '?').split(' ')[0]}</span></div>`;
+  // Remove placeholder
+  if (feed.querySelector('.ws-line .msg')?.textContent === 'Waiting for live cases...') {
+    feed.innerHTML = '';
+  }
+  feed.insertAdjacentHTML('afterbegin', line);
+  // Keep max 30 lines
+  while (feed.children.length > 30) feed.removeChild(feed.lastChild);
+}
+
+// ── Charts ─────────────────────────────────────────────────────────────
+function initCharts() {
+  const gridColor = 'rgba(0,0,0,0.06)';
+  const font = { family: 'Segoe UI, system-ui, sans-serif', size: 11 };
+
+  dailyChart = new Chart(document.getElementById('daily-chart'), {
+    type: 'bar',
+    data: { labels: [], datasets: [
+      { label: 'Critical', data: [], backgroundColor: '#DC2626', stack: 's' },
+      { label: 'Urgent',   data: [], backgroundColor: '#D97706', stack: 's' },
+      { label: 'Low',      data: [], backgroundColor: '#16A34A', stack: 's' },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font, boxWidth: 10, padding: 12 } } },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font } },
+        y: { stacked: true, beginAtZero: true, grid: { color: gridColor }, ticks: { font, precision: 0 } }
+      }
+    }
+  });
+
+  donutChart = new Chart(document.getElementById('donut-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Critical', 'Urgent', 'Low'],
+      datasets: [{ data: [0,0,0], backgroundColor: ['#DC2626','#D97706','#16A34A'],
+                   borderWidth: 2, borderColor: '#fff' }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '68%',
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  hourlyChart = new Chart(document.getElementById('hourly-chart'), {
+    type: 'line',
+    data: { labels: [], datasets: [{
+      label: 'Cases', data: [], borderColor: '#1D4ED8', backgroundColor: 'rgba(29,78,216,0.08)',
+      fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#1D4ED8'
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font, maxRotation: 0 } },
+        y: { beginAtZero: true, grid: { color: gridColor }, ticks: { font, precision: 0 } }
+      }
+    }
+  });
+}
+
+// ── Load data ──────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const [analyticsRes, casesRes] = await Promise.all([
+      fetch(API + '/api/analytics'),
+      fetch(API + '/api/cases/recent?limit=100')
+    ]);
+    const a = await analyticsRes.json();
+    const { cases } = await casesRes.json();
+
+    updateMetrics(a);
+    updateCharts(a);
+    updateBars(a);
+    updateTable(cases);
+  } catch (e) {
+    console.error('Failed to load analytics:', e);
+  }
+}
+
+function updateMetrics(a) {
+  const total = a.total_cases || 0;
+  document.getElementById('m-total').textContent = total;
+  document.getElementById('m-crit').textContent  = a.critical || 0;
+  document.getElementById('m-urg').textContent   = a.urgent   || 0;
+  document.getElementById('m-low').textContent   = a.low      || 0;
+  document.getElementById('m-acc').textContent   = a.sim_accuracy ? a.sim_accuracy + '%' : '—';
+  document.getElementById('avg-eta').textContent = a.avg_eta_minutes ? `avg ETA: ${a.avg_eta_minutes} min` : '';
+
+  // progress bars
+  if (total > 0) {
+    document.getElementById('b-crit').style.width = ((a.critical||0)/total*100) + '%';
+    document.getElementById('b-urg').style.width  = ((a.urgent||0)/total*100) + '%';
+    document.getElementById('b-low').style.width  = ((a.low||0)/total*100) + '%';
+  }
+
+  // risk number cards
+  document.getElementById('rc-crit').textContent = a.critical || 0;
+  document.getElementById('rc-urg').textContent  = a.urgent   || 0;
+  document.getElementById('rc-low').textContent  = a.low      || 0;
+  if (total > 0) {
+    document.getElementById('rp-crit').textContent = Math.round((a.critical||0)/total*100) + '%';
+    document.getElementById('rp-urg').textContent  = Math.round((a.urgent||0)/total*100) + '%';
+    document.getElementById('rp-low').textContent  = Math.round((a.low||0)/total*100) + '%';
+  }
+}
+
+function updateCharts(a) {
+  // Donut
+  donutChart.data.datasets[0].data = [a.critical||0, a.urgent||0, a.low||0];
+  donutChart.update();
+
+  // Daily — build stacked by risk
+  const daily = a.daily_last_7d || [];
+  const days  = daily.map(d => d.day.slice(5));  // MM-DD
+  // We only have totals per day from the query; show as single series
+  dailyChart.data.labels = days;
+  dailyChart.data.datasets[0].data = daily.map(d => d.cnt);
+  dailyChart.data.datasets[1].data = daily.map(() => 0);
+  dailyChart.data.datasets[2].data = daily.map(() => 0);
+  dailyChart.update();
+
+  // Hourly
+  const hourly = a.hourly_last_24h || [];
+  hourlyChart.data.labels   = hourly.map(h => h.hour);
+  hourlyChart.data.datasets[0].data = hourly.map(h => h.cnt);
+  hourlyChart.update();
+}
+
+function updateBars(a) {
+  const hospBars = document.getElementById('hosp-bars');
+  const specBars = document.getElementById('spec-bars');
+  const hospitals = a.top_hospitals || [];
+  const specs     = a.top_specialties || [];
+  const maxH = hospitals[0]?.cnt || 1;
+  const maxS = specs[0]?.cnt || 1;
+
+  hospBars.innerHTML = hospitals.length ? hospitals.map(h => `
+    <div class="bar-item">
+      <div class="bar-meta"><span class="bar-name">${h.hospital_name}</span><span class="bar-cnt">${h.cnt}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(h.cnt/maxH*100)}%"></div></div>
+    </div>`).join('') : '<div class="empty-msg">No data yet</div>';
+
+  specBars.innerHTML = specs.length ? specs.map(s => `
+    <div class="bar-item">
+      <div class="bar-meta"><span class="bar-name">${s.specialty}</span><span class="bar-cnt">${s.cnt}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(s.cnt/maxS*100)}%"></div></div>
+    </div>`).join('') : '<div class="empty-msg">No data yet</div>';
+}
+
+function updateTable(cases) {
+  const tbody = document.getElementById('case-tbody');
+  if (!cases || !cases.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">No cases in database yet — submit an emergency or run the simulator</td></tr>';
+    return;
+  }
+  tbody.innerHTML = cases.map(c => `
+    <tr>
+      <td class="mono">${c.case_id || '—'}</td>
+      <td class="mono">${(c.timestamp||'').slice(11,19)}</td>
+      <td><span class="risk-tag rt-${c.risk_level||c.risk}">${c.risk_level||c.risk||'—'}</span></td>
+      <td>${c.confidence ? c.confidence.toFixed(1)+'%' : '—'}</td>
+      <td class="trunc" title="${c.description||''}">${c.description||'—'}</td>
+      <td class="mono">${c.ambulance_id||c.ambulance||'—'}</td>
+      <td class="trunc">${c.hospital_name||c.hospital||'—'}</td>
+      <td>${c.specialty||'—'}</td>
+    </tr>`).join('');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+initCharts();
+loadData();
+connectWS();
+setInterval(loadData, 15000);  // auto-refresh every 15s
+</script>
+</body>
+</html>

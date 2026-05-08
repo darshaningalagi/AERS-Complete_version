@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AERS Simulator — Fake Environment</title>
+<style>
+:root{
+  --bg:#0B1120; --surface:#111827; --card:#1A2235;
+  --border:#1E2D45; --border2:#263550;
+  --red:#EF4444; --red-d:#7F1D1D; --red-bg:rgba(239,68,68,.1);
+  --amber:#F59E0B; --amber-d:#78350F; --amber-bg:rgba(245,158,11,.1);
+  --green:#22C55E; --green-d:#14532D; --green-bg:rgba(34,197,94,.1);
+  --blue:#3B82F6; --blue-bg:rgba(59,130,246,.1);
+  --text:#F1F5F9; --muted:#64748B; --muted2:#475569;
+  --font:'Segoe UI',system-ui,sans-serif;
+  --mono:'Courier New',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh}
+
+/* ── Header ── */
+.hdr{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:0 20px;height:54px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100;
+}
+.hdr-left{display:flex;align-items:center;gap:12px}
+.sim-icon{
+  width:32px;height:32px;border-radius:8px;background:rgba(59,130,246,.2);
+  border:1px solid rgba(59,130,246,.4);display:flex;align-items:center;
+  justify-content:center;font-size:16px;
+}
+.hdr-title{font-size:14px;font-weight:700;color:var(--text)}
+.hdr-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.back-link{
+  font-size:11px;padding:5px 12px;border:1px solid var(--border2);
+  border-radius:6px;color:var(--muted);text-decoration:none;transition:.15s;
+}
+.back-link:hover{border-color:var(--blue);color:var(--blue)}
+.hdr-right{display:flex;align-items:center;gap:10px}
+.conn-dot{
+  width:8px;height:8px;border-radius:50%;background:var(--red);
+  transition:.3s;box-shadow:0 0 0 2px rgba(239,68,68,.2);
+}
+.conn-dot.online{background:var(--green);box-shadow:0 0 0 2px rgba(34,197,94,.2);animation:glow 2s infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 0 2px rgba(34,197,94,.2)}50%{box-shadow:0 0 0 5px rgba(34,197,94,.1)}}
+
+/* ── Layout ── */
+.page{max-width:1400px;margin:0 auto;padding:16px;display:grid;grid-template-columns:260px 1fr;gap:14px}
+
+/* ── Control Panel ── */
+.ctrl-panel{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.card-hdr{
+  padding:10px 14px;border-bottom:1px solid var(--border);
+  font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;
+}
+.card-body{padding:14px}
+
+/* Buttons */
+.btn{
+  width:100%;padding:10px;border-radius:8px;font-size:13px;font-weight:600;
+  cursor:pointer;border:none;transition:.15s;font-family:var(--font);letter-spacing:.3px;
+}
+.btn-start{background:var(--green);color:#052e16}
+.btn-start:hover{background:#16a34a}
+.btn-stop{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.btn-stop:hover{background:rgba(239,68,68,.25)}
+.btn-fire{
+  padding:8px 10px;font-size:12px;border-radius:7px;cursor:pointer;font-family:var(--font);
+  border:1px solid var(--border2);background:var(--surface);color:var(--text);
+  transition:.15s;font-weight:500;flex:1;
+}
+.btn-fire:hover{border-color:currentColor}
+.btn-fire.crit{color:var(--red)}
+.btn-fire.crit:hover{background:var(--red-bg);border-color:var(--red)}
+.btn-fire.urg{color:var(--amber)}
+.btn-fire.urg:hover{background:var(--amber-bg);border-color:var(--amber)}
+.btn-fire.low{color:var(--green)}
+.btn-fire.low:hover{background:var(--green-bg);border-color:var(--green)}
+.btn-fire.any{color:var(--blue)}
+.btn-fire.any:hover{background:var(--blue-bg);border-color:var(--blue)}
+.btn-reset{
+  width:100%;padding:7px;font-size:11px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--border2);background:transparent;color:var(--muted);
+  font-family:var(--font);transition:.15s;
+}
+.btn-reset:hover{color:var(--text);border-color:var(--muted2)}
+
+.fire-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+
+/* Speed slider */
+.slider-wrap{margin:10px 0}
+.slider-label{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;margin-bottom:6px}
+input[type=range]{width:100%;accent-color:var(--blue)}
+
+/* Stat pills */
+.stat-row{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.stat-item{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 10px;border-radius:7px;background:var(--surface);
+  border:1px solid var(--border);
+}
+.stat-label{font-size:11px;color:var(--muted)}
+.stat-val{font-size:18px;font-weight:700}
+.stat-val.red{color:var(--red)}
+.stat-val.amber{color:var(--amber)}
+.stat-val.green{color:var(--green)}
+.stat-val.blue{color:var(--blue)}
+
+/* Countdown */
+.countdown{
+  text-align:center;padding:14px;
+  border:1px solid var(--border);border-radius:8px;background:var(--surface);
+  margin-top:4px;
+}
+.cd-num{font-size:36px;font-weight:700;color:var(--blue);font-family:var(--mono)}
+.cd-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-top:2px}
+
+/* Status badge */
+.status-badge{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:8px;border-radius:7px;font-size:12px;font-weight:600;
+  margin-bottom:10px;border:1px solid;
+}
+.status-badge.off{background:rgba(100,116,139,.1);color:var(--muted);border-color:var(--border)}
+.status-badge.on{background:rgba(34,197,94,.08);color:var(--green);border-color:rgba(34,197,94,.25);animation:pulse-badge 2s infinite}
+@keyframes pulse-badge{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.2)}50%{box-shadow:0 0 0 6px rgba(34,197,94,.05)}}
+.dot-sm{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* ── Main area ── */
+.main-area{display:flex;flex-direction:column;gap:12px}
+
+/* Metrics bar */
+.metrics-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.m-card{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:12px 14px;
+}
+.m-label{font-size:10px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px}
+.m-val{font-size:24px;font-weight:700;color:var(--text)}
+.m-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.m-val.red{color:var(--red)}
+.m-val.amber{color:var(--amber)}
+.m-val.green{color:var(--green)}
+.m-val.blue{color:var(--blue)}
+
+/* Incident feed */
+.feed-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;border-bottom:1px solid var(--border);
+}
+.feed-title{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.8px;text-transform:uppercase}
+.live-pill{
+  font-size:10px;padding:2px 8px;border-radius:20px;
+  background:rgba(34,197,94,.1);color:var(--green);border:1px solid rgba(34,197,94,.25);
+  display:flex;align-items:center;gap:4px;
+}
+.live-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:glow 1.5s infinite}
+
+.incident-list{max-height:460px;overflow-y:auto}
+.incident-row{
+  display:grid;grid-template-columns:60px 70px 80px 1fr 100px 90px 60px;
+  gap:8px;align-items:center;padding:9px 14px;
+  border-bottom:1px solid var(--border);font-size:11px;
+  transition:background .15s;
+}
+.incident-row:hover{background:rgba(255,255,255,.02)}
+.incident-row.new-row{animation:slide-in .4s ease-out}
+@keyframes slide-in{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+.col-hdr{
+  font-size:9px;font-weight:600;color:var(--muted2);letter-spacing:.8px;
+  text-transform:uppercase;padding:8px 14px;border-bottom:1px solid var(--border);
+  display:grid;grid-template-columns:60px 70px 80px 1fr 100px 90px 60px;gap:8px;
+}
+.sim-id{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.risk-pill{
+  font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600;
+  text-align:center;
+}
+.risk-pill.Critical{background:var(--red-bg);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.risk-pill.Urgent{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(245,158,11,.3)}
+.risk-pill.Low{background:var(--green-bg);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+.risk-pill.sending{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(59,130,246,.3)}
+.risk-pill.error{background:rgba(239,68,68,.05);color:var(--muted);border:1px solid var(--border)}
+.conf-bar-wrap{position:relative;height:4px;background:rgba(255,255,255,.05);border-radius:2px;overflow:hidden;margin-top:1px}
+.conf-bar-fill{position:absolute;left:0;top:0;height:100%;border-radius:2px}
+.desc-cell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.caller-cell{color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.case-id-cell{font-family:var(--mono);font-size:10px;color:var(--muted2)}
+.match-icon{font-size:13px;text-align:center}
+
+/* Terminal log */
+.terminal{
+  background:#060D1A;border:1px solid var(--border);border-radius:10px;overflow:hidden;
+}
+.term-hdr{
+  padding:8px 14px;border-bottom:1px solid var(--border);background:#0A1628;
+  display:flex;align-items:center;gap:8px;
+}
+.term-dots{display:flex;gap:5px}
+.term-dot{width:10px;height:10px;border-radius:50%}
+.term-title{font-size:10px;color:var(--muted);font-family:var(--mono);margin-left:4px}
+.term-body{height:140px;overflow-y:auto;padding:10px 14px;font-family:var(--mono);font-size:11px;line-height:1.7}
+.tl{color:var(--muted2)}
+.tm{color:#94A3B8}
+.tm.crit{color:#F87171}
+.tm.ok{color:#4ADE80}
+.tm.warn{color:#FBBF24}
+.tm.info{color:#60A5FA}
+.tm.dim{color:var(--muted)}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+@media(max-width:900px){
+  .page{grid-template-columns:1fr}
+  .metrics-bar{grid-template-columns:repeat(3,1fr)}
+  .incident-row,.col-hdr{grid-template-columns:50px 65px 1fr 80px 60px}
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="hdr">
+  <div class="hdr-left">
+    <div class="sim-icon">⚡</div>
+    <div>
+      <div class="hdr-title">AERS Simulator — Fake Environment</div>
+      <div class="hdr-sub">Auto-generates emergency incidents · Feeds main AERS backend in real time</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div class="conn-dot" id="conn-dot"></div>
+    <span id="conn-label" style="font-size:11px;color:var(--muted)">Connecting...</span>
+    <a href="/" class="back-link">← Main System</a>
+  </div>
+</div>
+
+<!-- Main page -->
+<div class="page">
+
+  <!-- ── CONTROL PANEL ── -->
+  <div class="ctrl-panel">
+
+    <!-- Status + Start/Stop -->
+    <div class="card">
+      <div class="card-hdr">Simulation Control</div>
+      <div class="card-body">
+        <div class="status-badge off" id="sim-badge">
+          <div class="dot-sm"></div>
+          <span id="sim-label">Simulator Offline</span>
+        </div>
+        <button class="btn btn-start" id="start-btn" onclick="startSim()">▶ Start Simulation</button>
+        <div style="height:6px"></div>
+        <button class="btn btn-stop" id="stop-btn" onclick="stopSim()" style="display:none">■ Stop Simulation</button>
+
+        <div class="countdown" id="countdown-wrap" style="display:none">
+          <div class="cd-num" id="cd-num">—</div>
+          <div class="cd-label">seconds to next incident</div>
+        </div>
+
+        <div class="slider-wrap" style="margin-top:14px">
+          <div class="slider-label">
+            <span>Incident speed</span>
+            <span id="speed-label">8s</span>
+          </div>
+          <input type="range" min="3" max="30" value="8" id="speed-slider" oninput="updateSpeed(this.value)">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:2px">
+            <span>Fast (3s)</span><span>Slow (30s)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual fire -->
+    <div class="card">
+      <div class="card-hdr">Manual Fire</div>
+      <div class="card-body">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Instantly inject a specific risk level into the system</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="btn-fire crit" onclick="fireOne('Critical')">🔴 Fire Critical Incident</button>
+          <button class="btn-fire urg" onclick="fireOne('Urgent')">🟡 Fire Urgent Incident</button>
+          <button class="btn-fire low" onclick="fireOne('Low')">🟢 Fire Low-Risk Incident</button>
+          <button class="btn-fire any" onclick="fireOne(null)">⚡ Fire Random Incident</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="card">
+      <div class="card-hdr">Session Statistics</div>
+      <div class="card-body">
+        <div class="stat-row">
+          <div class="stat-item"><span class="stat-label">Total Generated</span><span class="stat-val blue" id="s-total">0</span></div>
+          <div class="stat-item"><span class="stat-label">Critical</span><span class="stat-val red" id="s-crit">0</span></div>
+          <div class="stat-item"><span class="stat-label">Urgent</span><span class="stat-val amber" id="s-urg">0</span></div>
+          <div class="stat-item"><span class="stat-label">Low Risk</span><span class="stat-val green" id="s-low">0</span></div>
+        </div>
+        <div style="height:10px"></div>
+        <button class="btn-reset" onclick="resetSim()">↺ Reset Simulation</button>
+      </div>
+    </div>
+
+    <!-- Info -->
+    <div class="card">
+      <div class="card-hdr">How It Works</div>
+      <div class="card-body" style="font-size:11px;color:var(--muted);line-height:1.7">
+        <p>The simulator generates fake emergency incidents from a bank of <strong style="color:var(--text)">30 real-world scenarios</strong> and POSTs them to the AERS backend every N seconds.</p>
+        <br>
+        <p>Each incident goes through the full pipeline: ML triage → ambulance dispatch → hospital selection → case log.</p>
+        <br>
+        <p>Use "Manual Fire" to inject specific risk levels instantly during a demo.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MAIN AREA ── -->
+  <div class="main-area">
+
+    <!-- Metrics -->
+    <div class="metrics-bar">
+      <div class="m-card"><div class="m-label">Total Incidents</div><div class="m-val blue" id="m-total">0</div><div class="m-sub">this session</div></div>
+      <div class="m-card"><div class="m-label">Critical</div><div class="m-val red" id="m-crit">0</div><div class="m-sub">immediate response</div></div>
+      <div class="m-card"><div class="m-label">Urgent</div><div class="m-val amber" id="m-urg">0</div><div class="m-sub">10min response</div></div>
+      <div class="m-card"><div class="m-label">Low Risk</div><div class="m-val green" id="m-low">0</div><div class="m-sub">standard response</div></div>
+      <div class="m-card"><div class="m-label">Accuracy</div><div class="m-val" id="m-acc" style="color:var(--text)">—</div><div class="m-sub">vs expected</div></div>
+    </div>
+
+    <!-- Incident feed -->
+    <div class="card" style="flex:1">
+      <div class="feed-hdr">
+        <span class="feed-title">Live Incident Feed</span>
+        <div class="live-pill"><div class="live-dot"></div>Live</div>
+      </div>
+      <div class="col-hdr">
+        <span>ID</span><span>Time</span><span>Risk</span><span>Description</span>
+        <span>Ambulance</span><span>Hospital</span><span>Match</span>
+      </div>
+      <div class="incident-list" id="incident-list">
+        <div style="padding:32px;text-align:center;color:var(--muted);font-size:13px">
+          No incidents yet — start the simulator or fire a manual incident
+        </div>
+      </div>
+    </div>
+
+    <!-- Terminal -->
+    <div class="terminal">
+      <div class="term-hdr">
+        <div class="term-dots">
+          <div class="term-dot" style="background:#FF5F57"></div>
+          <div class="term-dot" style="background:#FFBD2E"></div>
+          <div class="term-dot" style="background:#27C93F"></div>
+        </div>
+        <span class="term-title">aers-simulator — dispatch log</span>
+      </div>
+      <div class="term-body" id="term-body"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+let polling = null;
+let correctMatches = 0, totalWithExpected = 0;
+
+// ── Terminal log ──────────────────────────────────────────────────────
+function tlog(msg, type = 'dim') {
+  const body = document.getElementById('term-body');
+  const t = new Date().toLocaleTimeString();
+  body.innerHTML += `<div><span class="tl">[${t}]</span> <span class="tm ${type}">${msg}</span></div>`;
+  body.scrollTop = body.scrollHeight;
+}
+
+// ── Connection check ──────────────────────────────────────────────────
+async function checkConn() {
+  try {
+    const r = await fetch(API + '/test');
+    if (r.ok) {
+      document.getElementById('conn-dot').className = 'conn-dot online';
+      document.getElementById('conn-label').textContent = 'Backend connected';
+      document.getElementById('conn-label').style.color = '#4ADE80';
+      tlog('Backend connection established at ' + API, 'ok');
+      return true;
+    }
+  } catch (e) {
+    document.getElementById('conn-dot').className = 'conn-dot';
+    document.getElementById('conn-label').textContent = 'Backend offline';
+    document.getElementById('conn-label').style.color = '#F87171';
+    tlog('Cannot reach backend — make sure uvicorn is running', 'crit');
+    return false;
+  }
+}
+
+// ── Simulation controls ───────────────────────────────────────────────
+async function startSim() {
+  const speed = document.getElementById('speed-slider').value;
+  try {
+    await fetch(`${API}/sim/start?speed=${speed}`, { method: 'POST' });
+    document.getElementById('start-btn').style.display = 'none';
+    document.getElementById('stop-btn').style.display = 'block';
+    document.getElementById('countdown-wrap').style.display = 'block';
+    document.getElementById('sim-badge').className = 'status-badge on';
+    document.getElementById('sim-label').textContent = 'Simulator Running';
+    tlog(`Simulator started — interval: ${speed}s`, 'ok');
+    startPolling();
+  } catch (e) {
+    tlog('Failed to start simulator: ' + e.message, 'crit');
+  }
+}
+
+async function stopSim() {
+  try {
+    await fetch(`${API}/sim/stop`, { method: 'POST' });
+    document.getElementById('stop-btn').style.display = 'none';
+    document.getElementById('start-btn').style.display = 'block';
+    document.getElementById('countdown-wrap').style.display = 'none';
+    document.getElementById('sim-badge').className = 'status-badge off';
+    document.getElementById('sim-label').textContent = 'Simulator Offline';
+    document.getElementById('cd-num').textContent = '—';
+    tlog('Simulator stopped', 'warn');
+    stopPolling();
+  } catch (e) {
+    tlog('Failed to stop: ' + e.message, 'crit');
+  }
+}
+
+async function resetSim() {
+  await fetch(`${API}/sim/reset`, { method: 'POST' });
+  correctMatches = 0; totalWithExpected = 0;
+  document.getElementById('incident-list').innerHTML =
+    '<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px">Simulation reset</div>';
+  updateMetrics({ total_generated: 0, total_critical: 0, total_urgent: 0, total_low: 0, next_in: 0 });
+  tlog('Simulation reset', 'warn');
+  document.getElementById('stop-btn').style.display = 'none';
+  document.getElementById('start-btn').style.display = 'block';
+  document.getElementById('countdown-wrap').style.display = 'none';
+  document.getElementById('sim-badge').className = 'status-badge off';
+  document.getElementById('sim-label').textContent = 'Simulator Offline';
+}
+
+async function fireOne(risk) {
+  const url = risk ? `${API}/sim/fire?risk=${risk}` : `${API}/sim/fire`;
+  tlog(`Manual fire: ${risk || 'random'}...`, 'info');
+  try {
+    const r = await fetch(url, { method: 'POST' });
+    const d = await r.json();
+    addIncidentRow(d, true);
+    await refreshState();
+    tlog(`Fired → ${d.actual_risk || 'error'} | ${d.case_id || d.error || '?'}`, d.status === 'success' ? 'ok' : 'crit');
+  } catch (e) {
+    tlog('Fire failed: ' + e.message, 'crit');
+  }
+}
+
+async function updateSpeed(val) {
+  document.getElementById('speed-label').textContent = val + 's';
+  try {
+    await fetch(`${API}/sim/speed?seconds=${val}`, { method: 'POST' });
+    tlog(`Interval updated to ${val}s`, 'dim');
+  } catch (e) {}
+}
+
+// ── Polling ───────────────────────────────────────────────────────────
+let lastIncidentCount = 0;
+
+function startPolling() {
+  polling = setInterval(async () => {
+    await refreshState();
+    await refreshIncidents();
+  }, 1200);
+}
+
+function stopPolling() {
+  if (polling) { clearInterval(polling); polling = null; }
+}
+
+async function refreshState() {
+  try {
+    const r = await fetch(`${API}/sim/state`);
+    const d = await r.json();
+    updateMetrics(d);
+    if (d.next_in !== undefined) {
+      document.getElementById('cd-num').textContent = d.running ? d.next_in : '—';
+    }
+  } catch (e) {}
+}
+
+async function refreshIncidents() {
+  try {
+    const r = await fetch(`${API}/sim/incidents`);
+    const d = await r.json();
+    const incidents = d.incidents || [];
+    if (incidents.length !== lastIncidentCount) {
+      lastIncidentCount = incidents.length;
+      renderFeed(incidents);
+    }
+  } catch (e) {}
+}
+
+function updateMetrics(d) {
+  document.getElementById('m-total').textContent = d.total_generated || 0;
+  document.getElementById('m-crit').textContent = d.total_critical || 0;
+  document.getElementById('m-urg').textContent = d.total_urgent || 0;
+  document.getElementById('m-low').textContent = d.total_low || 0;
+  document.getElementById('s-total').textContent = d.total_generated || 0;
+  document.getElementById('s-crit').textContent = d.total_critical || 0;
+  document.getElementById('s-urg').textContent = d.total_urgent || 0;
+  document.getElementById('s-low').textContent = d.total_low || 0;
+}
+
+function renderFeed(incidents) {
+  const reversed = [...incidents].reverse();
+  const el = document.getElementById('incident-list');
+  if (!reversed.length) return;
+
+  // Recalculate accuracy
+  correctMatches = 0; totalWithExpected = 0;
+  reversed.forEach(i => {
+    if (i.expected_risk && i.actual_risk) {
+      totalWithExpected++;
+      if (i.expected_risk === i.actual_risk) correctMatches++;
+    }
+  });
+  const acc = totalWithExpected > 0 ? Math.round((correctMatches / totalWithExpected) * 100) + '%' : '—';
+  document.getElementById('m-acc').textContent = acc;
+
+  el.innerHTML = reversed.map((i, idx) => {
+    const risk = i.actual_risk || (i.status === 'sending' ? 'sending' : 'error');
+    const match = i.expected_risk && i.actual_risk
+      ? (i.expected_risk === i.actual_risk ? '✓' : '✗') : '—';
+    const matchColor = match === '✓' ? '#4ADE80' : match === '✗' ? '#F87171' : '#475569';
+    const conf = i.confidence || 0;
+    const barColor = risk === 'Critical' ? '#EF4444' : risk === 'Urgent' ? '#F59E0B' : '#22C55E';
+    const hospShort = i.hospital ? i.hospital.replace(' Hospital','').replace(' Medical Center','').replace(' Center','') : '—';
+    return `
+      <div class="incident-row ${idx === 0 ? 'new-row' : ''}">
+        <span class="sim-id">${i.id}</span>
+        <span style="color:var(--muted);font-size:10px">${i.timestamp}</span>
+        <span class="risk-pill ${risk}">${risk}</span>
+        <span class="desc-cell" title="${i.description}">${i.description}</span>
+        <span class="caller-cell">${i.ambulance || '—'}</span>
+        <span class="caller-cell" title="${i.hospital || ''}">${hospShort}</span>
+        <span class="match-icon" style="color:${matchColor}">${match}</span>
+      </div>`;
+  }).join('');
+
+  // Log new incidents to terminal
+  if (reversed[0] && reversed[0].status === 'success') {
+    const i = reversed[0];
+    tlog(`${i.id} → ${i.actual_risk} (${i.confidence}%) | ${i.ambulance} → ${i.hospital?.split(' ')[0]}`,
+      i.actual_risk === 'Critical' ? 'crit' : i.actual_risk === 'Urgent' ? 'warn' : 'ok');
+  }
+}
+
+function addIncidentRow(i, isNew) {
+  const list = document.getElementById('incident-list');
+  if (list.querySelector('div[style]')) list.innerHTML = '';
+  const risk = i.actual_risk || (i.status === 'sending' ? 'sending' : 'error');
+  const match = i.expected_risk && i.actual_risk
+    ? (i.expected_risk === i.actual_risk ? '✓' : '✗') : '—';
+  const matchColor = match === '✓' ? '#4ADE80' : match === '✗' ? '#F87171' : '#475569';
+  const hospShort = i.hospital ? i.hospital.replace(' Hospital','').replace(' Medical Center','').replace(' Center','') : '—';
+  const row = `
+    <div class="incident-row new-row">
+      <span class="sim-id">${i.id}</span>
+      <span style="color:var(--muted);font-size:10px">${i.timestamp}</span>
+      <span class="risk-pill ${risk}">${risk}</span>
+      <span class="desc-cell" title="${i.description}">${i.description}</span>
+      <span class="caller-cell">${i.ambulance || '—'}</span>
+      <span class="caller-cell" title="${i.hospital || ''}">${hospShort}</span>
+      <span class="match-icon" style="color:${matchColor}">${match}</span>
+    </div>`;
+  list.insertAdjacentHTML('afterbegin', row);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+window.addEventListener('load', async () => {
+  tlog('AERS Simulator dashboard loaded', 'info');
+  const ok = await checkConn();
+  if (ok) {
+    // Check if simulator was already running (e.g. page refresh)
+    const r = await fetch(`${API}/sim/state`);
+    const d = await r.json();
+    if (d.running) {
+      document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('stop-btn').style.display = 'block';
+      document.getElementById('countdown-wrap').style.display = 'block';
+      document.getElementById('sim-badge').className = 'status-badge on';
+      document.getElementById('sim-label').textContent = 'Simulator Running';
+      startPolling();
+      tlog('Simulator was already running — resumed polling', 'ok');
+    }
+    updateMetrics(d);
+    await refreshIncidents();
+  }
+});
+</script>
+</body>
+</html>

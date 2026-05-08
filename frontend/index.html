@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AERS — AI Emergency Response System</title>
+<style>
+  :root {
+    --red: #DC2626; --red-bg: #FEF2F2; --red-border: #FECACA;
+    --amber: #D97706; --amber-bg: #FFFBEB; --amber-border: #FDE68A;
+    --green: #16A34A; --green-bg: #F0FDF4; --green-border: #BBF7D0;
+    --blue: #1D4ED8; --blue-bg: #EFF6FF; --blue-border: #BFDBFE;
+    --teal: #0F766E; --teal-bg: #F0FDFA; --teal-border: #99F6E4;
+    --gray: #374151; --gray-light: #F9FAFB; --gray-mid: #E5E7EB;
+    --border: #E5E7EB; --text: #111827; --muted: #6B7280;
+    --font: 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: #F3F4F6; color: var(--text); min-height: 100vh; }
+
+  /* ── Header ── */
+  .header {
+    background: #1E293B; color: white; padding: 0 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 56px; position: sticky; top: 0; z-index: 100;
+    border-bottom: 2px solid var(--red);
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon {
+    width: 32px; height: 32px; background: var(--red); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+  }
+  .logo-title { font-size: 15px; font-weight: 700; letter-spacing: .5px; }
+  .logo-sub { font-size: 11px; color: #94A3B8; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .online-pill {
+    font-size: 11px; padding: 3px 10px; border-radius: 20px;
+    background: rgba(22,163,74,.15); color: #4ADE80; border: 1px solid rgba(74,222,128,.3);
+  }
+  .api-url { font-size: 11px; color: #94A3B8; }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid; grid-template-columns: 360px 1fr;
+    gap: 16px; padding: 16px; max-width: 1400px; margin: 0 auto;
+  }
+  .panel {
+    background: white; border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .panel-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: var(--gray-light); font-size: 11px; font-weight: 600;
+    color: var(--muted); letter-spacing: .8px; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  /* ── Emergency form ── */
+  .form-area { padding: 14px; border-bottom: 1px solid var(--border); }
+  .presets { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+  .preset {
+    font-size: 11px; padding: 4px 10px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--border); background: white; color: var(--muted);
+    transition: all .15s;
+  }
+  .preset:hover { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+  .preset.critical-preset { border-color: var(--red-border); }
+  .preset.urgent-preset { border-color: var(--amber-border); }
+  textarea {
+    width: 100%; min-height: 90px; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-family: var(--font); font-size: 13px; resize: vertical;
+    line-height: 1.5; color: var(--text); outline: none; transition: border .15s;
+  }
+  textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(29,78,216,.1); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .form-row input {
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 12px; font-family: var(--font); color: var(--text); outline: none;
+  }
+  .form-row input:focus { border-color: var(--blue); }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+  .btn-mic {
+    width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 8px;
+    background: white; cursor: pointer; display: flex; align-items: center;
+    justify-content: center; flex-shrink: 0; transition: all .15s; font-size: 16px;
+  }
+  .btn-mic.active { background: var(--red-bg); border-color: var(--red); animation: pulse 1s infinite; }
+  .btn-dispatch {
+    flex: 1; height: 38px; background: var(--red); color: white; border: none;
+    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    letter-spacing: .3px; transition: all .15s;
+  }
+  .btn-dispatch:hover { background: #B91C1C; }
+  .btn-dispatch:disabled { background: #9CA3AF; cursor: not-allowed; }
+
+  /* ── Triage card ── */
+  .triage-area { padding: 14px; border-bottom: 1px solid var(--border); display: none; }
+  .triage-card { border-radius: 10px; padding: 14px; }
+  .triage-card.Critical { background: var(--red-bg); border: 1px solid var(--red-border); }
+  .triage-card.Urgent { background: var(--amber-bg); border: 1px solid var(--amber-border); }
+  .triage-card.Low { background: var(--green-bg); border: 1px solid var(--green-border); }
+  .triage-level {
+    font-size: 20px; font-weight: 700; margin-bottom: 2px;
+  }
+  .triage-level.Critical { color: var(--red); }
+  .triage-level.Urgent { color: var(--amber); }
+  .triage-level.Low { color: var(--green); }
+  .triage-action { font-size: 12px; color: var(--gray); margin-top: 6px; line-height: 1.4; }
+  .confidence-bar { margin-top: 10px; }
+  .confidence-label { font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .bar-track { height: 5px; background: rgba(0,0,0,.08); border-radius: 3px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width .6s; }
+  .bar-fill.Critical { background: var(--red); }
+  .bar-fill.Urgent { background: var(--amber); }
+  .bar-fill.Low { background: var(--green); }
+
+  /* ── Ambulance list ── */
+  .amb-list, .hosp-list { padding: 10px 14px; }
+  .amb-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;
+    transition: all .2s;
+  }
+  .amb-item.dispatched { border-color: var(--red-border); background: var(--red-bg); }
+  .amb-id { font-family: monospace; font-size: 12px; font-weight: 600; min-width: 56px; }
+  .amb-meta { flex: 1; }
+  .amb-name { font-size: 12px; color: var(--text); }
+  .amb-loc { font-size: 11px; color: var(--muted); }
+  .amb-badge {
+    font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 600;
+  }
+  .badge-available { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+  .badge-busy { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); animation: pulse 1.2s infinite; }
+  .badge-dispatched { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); animation: pulse 1.2s infinite; }
+
+  /* ── Hospital list ── */
+  .hosp-item {
+    padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 6px; transition: all .2s;
+  }
+  .hosp-item.selected { border-color: var(--green-border); background: var(--green-bg); }
+  .hosp-name { font-size: 13px; font-weight: 600; }
+  .hosp-meta { display: flex; gap: 12px; margin-top: 4px; }
+  .hosp-meta span { font-size: 11px; color: var(--muted); }
+  .cap-bar-wrap { margin-top: 6px; }
+  .cap-bar { height: 3px; background: var(--gray-mid); border-radius: 2px; overflow: hidden; }
+  .cap-fill { height: 100%; border-radius: 2px; }
+  .selected-tag {
+    font-size: 10px; padding: 2px 7px; border-radius: 20px;
+    background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border);
+    float: right;
+  }
+
+  /* ── Right panel ── */
+  .right-panel { display: flex; flex-direction: column; gap: 16px; }
+
+  /* ── Timeline ── */
+  .timeline-panel { flex: 1; }
+  .case-info {
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .case-id { font-family: monospace; font-size: 14px; font-weight: 600; color: var(--text); }
+  .case-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .phase-badge {
+    font-size: 11px; padding: 4px 12px; border-radius: 20px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .phase-dispatching { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
+  .phase-enroute { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue-border); }
+  .phase-arrived { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+  .timeline-steps { padding: 16px; }
+  .step { display: flex; gap: 12px; margin-bottom: 18px; position: relative; }
+  .step:not(:last-child)::before {
+    content: ''; position: absolute; left: 11px; top: 22px;
+    width: 1px; height: calc(100% + 0px); background: var(--border);
+  }
+  .step-dot {
+    width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--border);
+    background: white; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-size: 10px; color: var(--muted); font-weight: 700;
+  }
+  .step-dot.done { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+  .step-dot.active { background: var(--red-bg); border-color: var(--red); color: var(--red); animation: pulse 1s infinite; }
+  .step-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .step-title.pending { color: var(--muted); font-weight: 400; }
+  .step-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 60px 24px; text-align: center;
+    color: var(--muted);
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: .4; }
+  .empty-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .empty-desc { font-size: 13px; line-height: 1.5; }
+
+  /* ── Metrics ── */
+  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .metric-card {
+    background: white; border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .metric-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+  .metric-value { font-size: 26px; font-weight: 700; color: var(--text); }
+  .metric-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Log ── */
+  .log-panel { background: #1E293B; border-radius: 12px; overflow: hidden; }
+  .log-header {
+    padding: 10px 16px; border-bottom: 1px solid #334155;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .log-title { font-size: 11px; font-weight: 600; color: #94A3B8; letter-spacing: .8px; text-transform: uppercase; }
+  .log-count { font-size: 11px; color: #475569; }
+  .log-body { height: 130px; overflow-y: auto; padding: 8px 16px; }
+  .log-entry { display: flex; gap: 10px; padding: 3px 0; }
+  .log-time { font-family: monospace; font-size: 10px; color: #475569; flex-shrink: 0; padding-top: 1px; }
+  .log-msg { font-size: 11px; line-height: 1.4; }
+  .log-msg.info { color: #94A3B8; }
+  .log-msg.success { color: #4ADE80; }
+  .log-msg.danger { color: #F87171; }
+  .log-msg.warning { color: #FBBF24; }
+  .log-msg.dispatch { color: #60A5FA; }
+
+  /* ── Detail cards ── */
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .detail-card { background: white; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .detail-card-header {
+    padding: 10px 14px; background: var(--gray-light); border-bottom: 1px solid var(--border);
+    font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+  }
+  .detail-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 14px; border-bottom: 1px solid var(--gray-light);
+    font-size: 12px;
+  }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-key { color: var(--muted); }
+  .detail-val { font-weight: 600; color: var(--text); }
+  .detail-val.tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px;
+    background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue-border);
+  }
+
+  /* ── Spinner ── */
+  .queue-panel { border: 1.5px solid var(--amber); border-radius: 8px; background: var(--amber-bg); overflow: hidden; margin-top: 10px; }
+.queue-header { padding: 8px 12px; background: rgba(217,119,6,.12); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--amber-border); }
+.queue-title { font-size: 12px; font-weight: 700; color: var(--amber); display: flex; align-items: center; gap: 6px; }
+.queue-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); animation: pulse 1s infinite; }
+.queue-row { display: grid; grid-template-columns: 60px 70px 1fr 70px; gap: 8px; padding: 7px 12px; border-bottom: 1px solid rgba(217,119,6,.15); font-size: 11px; align-items: center; }
+.queue-row:last-child { border-bottom: none; }
+.queue-pos { font-family: monospace; font-weight: 700; color: var(--amber); font-size: 13px; }
+.queue-empty { padding: 10px 12px; font-size: 11px; color: var(--muted); text-align: center; }
+.queued-notice { background: var(--amber-bg); border: 1.5px solid var(--amber); border-radius: 8px; padding: 12px 14px; margin-top: 8px; }
+.queued-notice-title { font-size: 13px; font-weight: 700; color: var(--amber); margin-bottom: 4px; }
+.queued-notice-body { font-size: 12px; color: var(--gray); line-height: 1.5; }
+.step-dot.queued { background: var(--amber-bg); border-color: var(--amber); color: var(--amber); animation: pulse 1s infinite; }
+.spinner {
+    width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3);
+    border-top-color: white; border-radius: 50%;
+    animation: spin .6s linear infinite; display: inline-block; margin-right: 6px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.5} }
+
+  /* ── API config bar ── */
+  .api-bar {
+    background: #0F172A; padding: 8px 24px; display: flex;
+    align-items: center; gap: 10px; font-size: 11px;
+  }
+  .api-bar label { color: #64748B; }
+  .api-bar input {
+    background: #1E293B; border: 1px solid #334155; color: #94A3B8;
+    border-radius: 6px; padding: 4px 8px; font-size: 11px; width: 220px; outline: none;
+  }
+  .api-test-btn {
+    padding: 4px 12px; border: 1px solid #334155; background: transparent;
+    color: #94A3B8; border-radius: 6px; font-size: 11px; cursor: pointer;
+  }
+  .api-test-btn:hover { border-color: #4ADE80; color: #4ADE80; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .metrics-grid { grid-template-columns: repeat(2,1fr); }
+    .detail-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- API Config Bar -->
+<div class="api-bar">
+  <label>Backend URL:</label>
+  <input type="text" id="api-url" value="http://localhost:8000" />
+  <button class="api-test-btn" onclick="testConnection()">Test Connection</button>
+  <span id="conn-status" style="color:#475569;font-size:11px">Not tested</span>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">🚨</div>
+    <div>
+      <div class="logo-title">AERS — AI Emergency Response System</div>
+      <div class="logo-sub">Automated Triage · Dispatch · Coordination</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:6px">
+    <a href="/simulator" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;color:var(--muted);text-decoration:none">⚡ Simulator</a>
+    <a href="/analytics" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;color:var(--muted);text-decoration:none">📊 Analytics</a>
+    <a href="/docs" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;color:var(--muted);text-decoration:none">📖 API Docs</a>
+  </div>
+  <div class="header-right">
+    <div class="online-pill" id="sys-status">● System Online</div>
+  </div>
+</div>
+
+<!-- Metrics Row -->
+<div style="padding: 12px 16px 0; max-width: 1400px; margin: 0 auto;">
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-label">Cases Today</div>
+      <div class="metric-value" id="m-cases">0</div>
+      <div class="metric-sub" id="m-crit">0 critical</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Avg Response ETA</div>
+      <div class="metric-value" id="m-eta">—</div>
+      <div class="metric-sub">minutes</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Units Available</div>
+      <div class="metric-value" id="m-units">—</div>
+      <div class="metric-sub">loading...</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Hospitals Online</div>
+      <div class="metric-value" id="m-hospitals">4</div>
+      <div class="metric-sub">all accepting</div>
+    </div>
+  </div>
+</div>
+
+<!-- Main Layout -->
+<div class="layout">
+
+  <!-- ── LEFT PANEL ── -->
+  <div>
+    <!-- Emergency Form -->
+    <div class="panel" style="margin-bottom:16px">
+      <div class="panel-header">
+        <span>Report Emergency</span>
+        <span id="model-badge" style="font-size:10px;padding:2px 8px;border-radius:20px;background:#DCFCE7;color:#16A34A">ML Model Ready</span>
+      </div>
+      <div class="form-area">
+        <div class="presets">
+          <button class="preset critical-preset" onclick="fp('65 year old male, severe chest pain, sweating, left arm pain, difficulty breathing')">🫀 Cardiac</button>
+          <button class="preset critical-preset" onclick="fp('Road accident, multiple injuries, one person unconscious, heavy bleeding from head')">🚗 Accident</button>
+          <button class="preset urgent-preset" onclick="fp('Child 8 years old, high fever 104F, history of seizures, currently unresponsive')">👶 Pediatric</button>
+          <button class="preset critical-preset" onclick="fp('Person collapsed, not breathing, no pulse, bystanders attempting CPR')">❤️ Arrest</button>
+          <button class="preset critical-preset" onclick="fp('Sudden slurred speech, facial drooping, left arm weakness, severe headache')">🧠 Stroke</button>
+          <button class="preset urgent-preset" onclick="fp('Deep cut on arm, moderate bleeding, needs stitches, conscious and stable')">🩹 Laceration</button>
+        </div>
+        <textarea id="desc" placeholder="Describe the emergency in plain language...
+Examples:
+- 65 year old, chest pain, sweating, left arm numb
+- Child fell from height, unconscious, head bleeding
+- Severe allergic reaction, throat swelling, difficulty breathing"></textarea>
+        <div class="form-row">
+          <input type="text" id="caller-name" placeholder="Caller name (optional)" />
+          <input type="text" id="caller-phone" placeholder="Phone (optional)" />
+        </div>
+        <div class="btn-row">
+          <button class="btn-mic" id="mic-btn" onclick="toggleMic()" title="Voice input">🎤</button>
+          <button class="btn-dispatch" id="dispatch-btn" onclick="dispatch()">🚨 Dispatch Emergency</button>
+        </div>
+      </div>
+
+      <!-- Triage Result -->
+      <div class="triage-area" id="triage-area">
+        <div class="panel-header" style="border:none;padding-bottom:8px">AI Triage Result</div>
+        <div id="triage-card"></div>
+      </div>
+    </div>
+
+    <!-- Ambulances -->
+    <div class="panel" style="margin-bottom:16px">
+      <div class="panel-header">Ambulance Fleet</div>
+      <div class="amb-list" id="amb-list">
+        <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading fleet...</div>
+      </div>
+    </div>
+
+    <!-- Hospitals -->
+    <div class="panel" style="margin-bottom:16px" id="queue-container" style="display:none">
+      <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Priority Queue</span>
+        <span id="queue-size-badge" style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border);display:none">0 waiting</span>
+      </div>
+      <div id="queue-list" style="padding:8px 14px">
+        <div class="queue-empty">No cases waiting — all units available</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Hospitals</div>
+      <div class="hosp-list" id="hosp-list">
+        <div style="color:var(--muted);font-size:12px;padding:8px 0">Loading hospitals...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT PANEL ── -->
+  <div class="right-panel">
+
+    <!-- Timeline -->
+    <div class="panel timeline-panel">
+      <div class="panel-header">Active Case — Live Timeline</div>
+      <div id="timeline-area">
+        <div class="empty-state">
+          <div class="empty-icon">🚑</div>
+          <div class="empty-title">No Active Case</div>
+          <div class="empty-desc">Submit an emergency report to start the AI triage and dispatch pipeline. The case timeline will appear here.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Case detail cards -->
+    <div class="detail-grid" id="detail-area" style="display:none">
+      <div class="detail-card">
+        <div class="detail-card-header">Dispatched Ambulance</div>
+        <div id="amb-detail"></div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-card-header">Selected Hospital</div>
+        <div id="hosp-detail"></div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-panel">
+      <div class="log-header">
+        <span class="log-title">System Log</span>
+        <span class="log-count" id="log-count">0 entries</span>
+      </div>
+      <div class="log-body" id="log-body"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let API = 'http://localhost:8000';
+let totalEta = 0, caseCount = 0, critCount = 0;
+let busy = false, micActive = false;
+
+// ── Utility ─────────────────────────────────────────────────────────
+function getApi() { return document.getElementById('api-url').value.replace(/\/$/, ''); }
+
+function log(msg, type = 'info') {
+  const body = document.getElementById('log-body');
+  const t = new Date().toLocaleTimeString();
+  body.innerHTML += `<div class="log-entry"><span class="log-time">${t}</span><span class="log-msg ${type}">${msg}</span></div>`;
+  body.scrollTop = body.scrollHeight;
+  const n = body.children.length;
+  document.getElementById('log-count').textContent = n + ' entr' + (n === 1 ? 'y' : 'ies');
+}
+
+function fp(txt) { document.getElementById('desc').value = txt; }
+
+// ── Connection test ──────────────────────────────────────────────────
+async function testConnection() {
+  const el = document.getElementById('conn-status');
+  el.textContent = 'Testing...';
+  el.style.color = '#94A3B8';
+  try {
+    const r = await fetch(getApi() + '/test');
+    const d = await r.json();
+    el.textContent = '● Connected — ' + d.message;
+    el.style.color = '#4ADE80';
+    log('Backend connected: ' + getApi(), 'success');
+    loadStatus();
+  } catch (e) {
+    el.textContent = '✗ Cannot connect';
+    el.style.color = '#F87171';
+    log('Cannot reach backend at ' + getApi() + ' — make sure uvicorn is running', 'danger');
+  }
+}
+
+// ── Load fleet + hospitals ───────────────────────────────────────────
+async function loadStatus() {
+  try {
+    const r = await fetch(getApi() + '/status');
+    const d = await r.json();
+    renderFleet(d.fleet, null);
+    renderHospitals(d.hospitals, null);
+    document.getElementById('m-units').textContent = d.ambulances_available;
+    document.getElementById('m-units').parentElement.querySelector('.metric-sub').textContent =
+      'of ' + d.ambulances_total + ' total';
+    document.getElementById('m-hospitals').textContent = d.hospitals_total;
+    if (!d.model_loaded) {
+      document.getElementById('model-badge').textContent = 'Model Not Loaded';
+      document.getElementById('model-badge').style.background = '#FEF2F2';
+      document.getElementById('model-badge').style.color = '#DC2626';
+      log('ML model not loaded — run: python model/train.py', 'danger');
+    }
+    return d;  // return live data so callers can use fleet/hospitals
+  } catch (e) {
+    log('Could not load system status — backend may be offline', 'warning');
+    return null;
+  }
+}
+
+function renderFleet(fleet, dispatchedId) {
+  document.getElementById('amb-list').innerHTML = fleet.map(a => {
+    const isDisp = a.id === dispatchedId;
+    const st = isDisp ? 'dispatched' : a.status;
+    const badgeCls = st === 'available' ? 'badge-available' : 'badge-busy';
+    const typeTag = a.type === 'ALS'
+      ? `<span style="font-size:9px;padding:1px 5px;border-radius:10px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;margin-left:4px">ALS</span>`
+      : `<span style="font-size:9px;padding:1px 5px;border-radius:10px;background:#F0FDF4;color:#16A34A;border:1px solid #BBF7D0;margin-left:4px">BLS</span>`;
+    return `
+      <div class="amb-item ${st !== 'available' ? 'dispatched' : ''}">
+        <span class="amb-id">${a.id}</span>
+        <div class="amb-meta">
+          <div class="amb-name">${a.driver} ${typeTag}</div>
+          <div class="amb-loc">${a.location}</div>
+        </div>
+        <span class="amb-badge ${badgeCls}">${st}</span>
+      </div>`;
+  }).join('');
+}
+
+function renderHospitals(hospitals, selectedId) {
+  document.getElementById('hosp-list').innerHTML = hospitals.map(h => {
+    const isSel = h.id === selectedId;
+    const capColor = h.capacity_pct > 85 ? '#DC2626' : h.capacity_pct > 70 ? '#D97706' : '#16A34A';
+    return `
+      <div class="hosp-item ${isSel ? 'selected' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="hosp-name">${h.name}</div>
+          ${isSel ? '<span class="selected-tag">Selected</span>' : ''}
+        </div>
+        <div class="hosp-meta">
+          <span>${h.icu_beds} ICU beds</span>
+          <span>${h.capacity_pct}% capacity</span>
+        </div>
+        <div class="cap-bar-wrap">
+          <div class="cap-bar"><div class="cap-fill" style="width:${h.capacity_pct}%;background:${capColor}"></div></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Render priority queue ────────────────────────────────────────────
+function renderQueue(queue) {
+  const container = document.getElementById('queue-container');
+  const list = document.getElementById('queue-list');
+  const badge = document.getElementById('queue-size-badge');
+
+  if (!container) return;
+
+  if (!queue || queue.length === 0) {
+    container.style.display = 'none';
+    badge.style.display = 'none';
+    list.innerHTML = '<div class="queue-empty">No cases waiting — all units available</div>';
+    return;
+  }
+
+  container.style.display = 'block';
+  badge.style.display = 'inline-block';
+  badge.textContent = queue.length + ' waiting';
+
+  list.innerHTML = queue.map((item, idx) => {
+    const riskColor = item.risk === 'Critical' ? 'var(--red)' :
+                      item.risk === 'Urgent' ? 'var(--amber)' : 'var(--green)';
+    return `<div class="queue-row">
+      <span class="queue-pos">#${idx + 1}</span>
+      <span class="risk-tag rt-${item.risk}" style="text-align:center">${item.risk}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px"
+            title="${item.description}">${item.description || item.case_id}</span>
+      <span style="font-family:monospace;font-size:10px;color:var(--muted)">${item.queued_at}</span>
+    </div>`;
+  }).join('');
+}
+
+async function refreshQueue() {
+  try {
+    const r = await fetch(getApi() + '/queue');
+    const d = await r.json();
+    renderQueue(d.queue);
+  } catch(e) {}
+}
+
+// ── Voice input ──────────────────────────────────────────────────────
+function toggleMic() {
+  if (busy) return;
+  micActive = !micActive;
+  const btn = document.getElementById('mic-btn');
+  btn.className = 'btn-mic' + (micActive ? ' active' : '');
+  if (micActive) {
+    log('Voice capture started (simulated Whisper STT)', 'dispatch');
+    setTimeout(() => {
+      micActive = false;
+      btn.className = 'btn-mic';
+      const samples = [
+        '55 year old male, severe crushing chest pain, radiating to left arm, diaphoresis',
+        'Pedestrian struck by vehicle at junction, unconscious, visible head trauma',
+        'Child 6 years, near drowning in pool, not breathing, bystander giving CPR',
+      ];
+      document.getElementById('desc').value = samples[Math.floor(Math.random() * samples.length)];
+      log('Whisper STT transcription complete', 'success');
+    }, 2200);
+  }
+}
+
+// ── Main dispatch ────────────────────────────────────────────────────
+async function dispatch() {
+  const desc = document.getElementById('desc').value.trim();
+  if (!desc || busy) return;
+
+  busy = true;
+  const btn = document.getElementById('dispatch-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Analyzing...';
+
+  // Hide stale triage
+  document.getElementById('triage-area').style.display = 'none';
+  document.getElementById('triage-card').innerHTML = '';
+  document.getElementById('timeline-area').innerHTML = `
+    <div class="empty-state">
+      <div style="font-size:28px;margin-bottom:10px">⚡</div>
+      <div class="empty-title">AI Triage Engine Processing...</div>
+      <div class="empty-desc">Extracting symptoms · Classifying severity · Selecting resources</div>
+    </div>`;
+
+  log('Emergency received — starting triage pipeline', 'dispatch');
+
+  try {
+    const res = await fetch(getApi() + '/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        description: desc,
+        lat: 14.4673, lng: 75.9238,
+        caller_name: document.getElementById('caller-name').value || 'Anonymous',
+        caller_phone: document.getElementById('caller-phone').value || 'Unknown',
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Server error');
+    }
+
+    const data = await res.json();
+    renderResult(data);
+
+    // Clear form
+    document.getElementById('desc').value = '';
+    document.getElementById('caller-name').value = '';
+    document.getElementById('caller-phone').value = '';
+
+  } catch (e) {
+    log('API error: ' + e.message, 'danger');
+    document.getElementById('timeline-area').innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:28px;margin-bottom:10px">⚠️</div>
+        <div class="empty-title" style="color:#DC2626">Backend Not Reachable</div>
+        <div class="empty-desc">Make sure FastAPI is running:<br><code style="background:#F3F4F6;padding:2px 8px;border-radius:4px">uvicorn app:app --reload</code><br><br>Then click "Test Connection" above.</div>
+      </div>`;
+  }
+
+  busy = false;
+  btn.disabled = false;
+  btn.innerHTML = '🚨 Dispatch Emergency';
+}
+
+function renderResult(d) {
+  const risk = d.triage.risk_level;
+  const amb = d.dispatch.ambulance;
+  const hosp = d.hospital;
+
+  // Metrics
+  caseCount++;
+  if (risk === 'Critical') critCount++;
+  if (amb) totalEta += amb.eta_minutes;
+  document.getElementById('m-cases').textContent = caseCount;
+  document.getElementById('m-crit').textContent = critCount + ' critical';
+  document.getElementById('m-eta').textContent = caseCount ? Math.round(totalEta / caseCount) : '—';
+
+  // Logs
+  log(`Triage complete → ${risk} (${d.triage.confidence}% confidence)`, risk === 'Critical' ? 'danger' : risk === 'Urgent' ? 'warning' : 'success');
+  if (amb) log(`Unit ${amb.id} dispatched — ${amb.distance_km}km · ETA ${amb.eta_minutes}min`, 'dispatch');
+  if (hosp) log(`Hospital: ${hosp.name} — ${hosp.icu_beds} ICU, ${hosp.capacity_pct}% cap`, 'dispatch');
+  log(`Case ID: ${d.case_id}`, 'info');
+
+  // Triage card
+  const ta = document.getElementById('triage-area');
+  ta.style.display = 'block';
+  document.getElementById('triage-card').innerHTML = `
+    <div class="triage-card ${risk}">
+      <div class="triage-level ${risk}">${risk}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Confidence: ${d.triage.confidence}%</div>
+      <div class="triage-action">${d.triage.recommended_action}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">
+        Response target: <strong>${d.triage.response_time_target}</strong>
+      </div>
+      ${d.dispatch.ambulance && d.dispatch.ambulance.dispatch_note ? `<div style="font-size:11px;margin-top:5px;padding:5px 8px;border-radius:6px;background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border)">${d.dispatch.ambulance.dispatch_note}</div>` : ''}
+      <div class="confidence-bar">
+        <div class="confidence-label"><span>Risk score</span><span>${d.triage.confidence}%</span></div>
+        <div class="bar-track"><div class="bar-fill ${risk}" style="width:${d.triage.confidence}%"></div></div>
+      </div>
+    </div>`;
+
+  // Refresh fleet, hospitals, and queue
+  loadStatus().then(liveData => {
+    if (liveData) {
+      renderFleet(liveData.fleet, amb ? amb.id : null);
+      renderHospitals(liveData.hospitals, hosp ? hosp.id : null);
+    }
+  });
+  refreshQueue();
+
+  // Show queued notice if no ambulance assigned
+  if (!amb && d.dispatch.status === 'queued') {
+    const qPos = d.dispatch.queue_position || 1;
+    const qMsg = d.dispatch.queue_message || 'Case queued — unit will be assigned when available.';
+    const ta = document.getElementById('triage-area');
+    ta.style.display = 'block';
+    document.getElementById('triage-card').innerHTML += `
+      <div class="queued-notice" style="margin-top:10px">
+        <div class="queued-notice-title">⏳ No Units Available — Case Queued</div>
+        <div class="queued-notice-body">${qMsg}</div>
+        <div style="font-size:11px;margin-top:6px;color:var(--muted)">Queue position: <strong style="color:var(--amber)">#${qPos}</strong> — a unit will be auto-assigned when one is released.</div>
+      </div>`;
+  }
+
+  // Timeline
+  const steps = d.timeline.map((s, i) => ({
+    ...s,
+    done: s.status === 'done',
+    active: s.status === 'active',
+  }));
+
+  document.getElementById('timeline-area').innerHTML = `
+    <div class="case-info">
+      <div>
+        <div class="case-id">${d.case_id}</div>
+        <div class="case-sub">${risk} · ${d.timestamp}</div>
+      </div>
+      <span class="phase-badge phase-dispatching" id="phase-badge">Dispatching</span>
+    </div>
+    <div class="timeline-steps">
+      ${steps.map(s => `
+        <div class="step">
+          <div class="step-dot ${s.done ? 'done' : s.active ? 'active' : ''}">
+            ${s.done ? '✓' : s.active ? '→' : '·'}
+          </div>
+          <div>
+            <div class="step-title ${!s.done && !s.active ? 'pending' : ''}">${s.step}</div>
+            <div class="step-desc">${s.time || 'Pending...'}</div>
+          </div>
+        </div>`).join('')}
+    </div>`;
+
+  // Detail cards
+  if (amb || hosp) {
+    document.getElementById('detail-area').style.display = 'grid';
+    if (amb) {
+      document.getElementById('amb-detail').innerHTML = [
+        ['Unit ID', amb.id],
+        ['Driver', amb.driver],
+        ['Type', amb.type],
+        ['Distance', amb.distance_km + ' km'],
+        ['ETA', amb.eta_minutes + ' min'],
+        ['Phone', amb.phone],
+      ].map(([k, v]) => `
+        <div class="detail-row">
+          <span class="detail-key">${k}</span>
+          <span class="detail-val">${v}</span>
+        </div>`).join('');
+    }
+    if (hosp) {
+      document.getElementById('hosp-detail').innerHTML = [
+        ['Hospital', hosp.name],
+        ['Specialty', hosp.specialty_matched],
+        ['Distance', hosp.distance_km + ' km'],
+        ['ICU beds', hosp.icu_beds],
+        ['Capacity', hosp.capacity_pct + '%'],
+        ['Contact', hosp.contact],
+      ].map(([k, v]) => `
+        <div class="detail-row">
+          <span class="detail-key">${k}</span>
+          <span class="detail-val">${v}</span>
+        </div>`).join('');
+    }
+  }
+
+  // Animate timeline progression
+  const pb = document.getElementById('phase-badge');
+  setTimeout(() => {
+    if (pb) { pb.className = 'phase-badge phase-enroute'; pb.textContent = 'En Route'; }
+    log('Route optimized — ambulance en route', 'success');
+  }, 3000);
+  setTimeout(() => {
+    if (pb) { pb.className = 'phase-badge phase-arrived'; pb.textContent = 'On Scene'; }
+    log(`${amb ? amb.id : 'Unit'} arrived at scene`, 'success');
+  }, 7000);
+}
+
+// ── Init ────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  log('AERS frontend loaded — click "Test Connection" to connect to backend', 'info');
+  log('Backend URL: ' + getApi(), 'info');
+  // Try auto-connect
+  testConnection().catch(() => {});
+});
+
+document.getElementById('api-url').addEventListener('change', () => {
+  testConnection();
+});
+
+// Poll queue every 5 seconds to keep it fresh
+setInterval(refreshQueue, 5000);
+
+// ── WebSocket live push ───────────────────────────────────────────────
+function connectWS() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'new_case' && msg.data) {
+        const d = msg.data;
+        log(`[WS] ${d.case_id} — ${d.risk} (${d.confidence}%) pushed live`, 'dispatch');
+      }
+      if (msg.type === 'queue_resolved' && msg.data) {
+        const d = msg.data;
+        log(`[QUEUE] ${d.message}`, 'safe');
+        refreshQueue();
+        loadStatus().then(ld => { if(ld) renderFleet(ld.fleet, d.ambulance); });
+      }
+    } catch(_) {}
+  };
+  ws.onclose = () => setTimeout(connectWS, 3000);
+  ws.onerror = () => ws.close();
+}
+connectWS();
+</script>
+</body>
+</html>
