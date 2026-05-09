@@ -520,12 +520,34 @@ function renderFleet(fleet, dispatchedId) {
     const typeTag = a.type === 'ALS'
       ? `<span style="font-size:9px;padding:1px 5px;border-radius:10px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;margin-left:4px">ALS</span>`
       : `<span style="font-size:9px;padding:1px 5px;border-radius:10px;background:#F0FDF4;color:#16A34A;border:1px solid #BBF7D0;margin-left:4px">BLS</span>`;
+
+    // Tracking info with live location
+    const tracking = a.tracking || {};
+    const hasTracking = tracking.case_id && tracking.destination_hospital_name;
+    const patientLoc = tracking.patient_location_lat && tracking.patient_location_lng
+      ? `${tracking.patient_location_lat}, ${tracking.patient_location_lng}`
+      : 'Not tracking';
+    const ambLoc = a.lat && a.lng ? `${a.lat}, ${a.lng}` : a.location;
+    const trackingInfo = hasTracking ? `
+      <div style="margin-top:4px;padding:4px 6px;border-radius:4px;background:#EFF6FF;border:1px solid #BFDBFE;font-size:10px">
+        <div style="color:#1D4ED8;font-weight:500">📍 LIVE LOCATION</div>
+        <div style="color:#111827">Case: ${tracking.case_id || '-'}</div>
+        <div style="color:#6B7280">Patient: ${tracking.patient_description ? tracking.patient_description.substring(0,30)+'...' : '-'}</div>
+        <div style="color:#059669;font-weight:500">🏥 To: ${tracking.destination_hospital_name || '-'}</div>
+        <div style="color:#7C3AED">Phase: ${a.current_phase || 'dispatched'}</div>
+        <div style="color:#DC2626;font-weight:500">🚑 Ambulance: ${ambLoc}</div>
+        <div style="color:#6B7280">📌 Patient: ${patientLoc}</div>
+        <div style="color:#16A34A">🏥 Hospital: ${tracking.destination_hospital_lat}, ${tracking.destination_hospital_lng}</div>
+      </div>
+    ` : '';
+
     return `
       <div class="amb-item ${st !== 'available' ? 'dispatched' : ''}">
         <span class="amb-id">${a.id}</span>
         <div class="amb-meta">
           <div class="amb-name">${a.driver} ${typeTag}</div>
           <div class="amb-loc">${a.location}</div>
+          ${trackingInfo}
         </div>
         <span class="amb-badge ${badgeCls}">${st}</span>
       </div>`;

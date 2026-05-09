@@ -93,6 +93,10 @@ td{padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text)}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:#F8FAFC}
 .risk-tag{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600}
+.status-tag{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600}
+.status-delivered{background:#F0FDF4;color:#16A34A}
+.status-picked{background:#EFF6FF;color:#1D4ED8}
+.status-ongoing{background:#FFFBEB;color:#D97706}
 .rt-Critical{background:var(--red-bg);color:var(--red);border:1px solid var(--red-light)}
 .rt-Urgent{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-light)}
 .rt-Low{background:var(--green-bg);color:var(--green);border:1px solid var(--green-light)}
@@ -235,9 +239,9 @@ tr:hover td{background:#F8FAFC}
       <table>
         <thead><tr>
           <th>Case ID</th><th>Time</th><th>Risk</th><th>Confidence</th>
-          <th>Description</th><th>Ambulance</th><th>Hospital</th><th>Specialty</th>
+          <th>Description</th><th>Ambulance</th><th>Hospital</th><th>Specialty</th><th>Patient Status</th>
         </tr></thead>
-        <tbody id="case-tbody"><tr><td colspan="8" class="empty-msg"><span class="spinner-sm"></span>Loading...</td></tr></tbody>
+        <tbody id="case-tbody"><tr><td colspan="9" class="empty-msg"><span class="spinner-sm"></span>Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -279,7 +283,9 @@ function addWsFeedLine(d) {
   const feed = document.getElementById('ws-feed');
   const t = new Date().toLocaleTimeString();
   const cls = d.risk === 'Critical' ? 'crit' : d.risk === 'Urgent' ? 'urg' : 'low';
-  const line = `<div class="ws-line ${cls}"><span class="ts">${t}</span> <span class="msg">${d.case_id} — ${d.risk} (${d.confidence}%) — ${d.ambulance || '?'} → ${(d.hospital || '?').split(' ')[0]}</span></div>`;
+  // Show brief info: case_id, risk, description, ambulance, hospital
+  const desc = d.description ? d.description.substring(0, 25) + (d.description.length > 25 ? '...' : '') : 'No description';
+  const line = `<div class="ws-line ${cls}"><span class="ts">${t}</span> <span class="msg">${d.case_id} — ${d.risk} — ${desc} — ${d.ambulance || '?'} → ${(d.hospital || '?').split(' ')[0]}</span></div>`;
   // Remove placeholder
   if (feed.querySelector('.ws-line .msg')?.textContent === 'Waiting for live cases...') {
     feed.innerHTML = '';
@@ -392,14 +398,13 @@ function updateCharts(a) {
   donutChart.data.datasets[0].data = [a.critical||0, a.urgent||0, a.low||0];
   donutChart.update();
 
-  // Daily — build stacked by risk
+  // Daily — stacked by risk (now with breakdown)
   const daily = a.daily_last_7d || [];
   const days  = daily.map(d => d.day.slice(5));  // MM-DD
-  // We only have totals per day from the query; show as single series
   dailyChart.data.labels = days;
-  dailyChart.data.datasets[0].data = daily.map(d => d.cnt);
-  dailyChart.data.datasets[1].data = daily.map(() => 0);
-  dailyChart.data.datasets[2].data = daily.map(() => 0);
+  dailyChart.data.datasets[0].data = daily.map(d => d.Critical || 0);
+  dailyChart.data.datasets[1].data = daily.map(d => d.Urgent || 0);
+  dailyChart.data.datasets[2].data = daily.map(d => d.Low || 0);
   dailyChart.update();
 
   // Hourly
@@ -433,10 +438,22 @@ function updateBars(a) {
 function updateTable(cases) {
   const tbody = document.getElementById('case-tbody');
   if (!cases || !cases.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">No cases in database yet — submit an emergency or run the simulator</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-msg">No cases in database yet — submit an emergency or run the simulator</td></tr>';
     return;
   }
-  tbody.innerHTML = cases.map(c => `
+  // Map patient status to display text and color
+  const getStatusInfo = (status) => {
+    if (status === 'patient arrived at hospital') return { text: 'Arrived at Hospital', cls: 'delivered' };
+    if (status === 'patient picked up') return { text: 'Picked Up', cls: 'picked' };
+    if (status === 'ongoing') return { text: 'In Progress', cls: 'ongoing' };
+    // Fallback for old format
+    if (status === 'delivered') return { text: 'Arrived at Hospital', cls: 'delivered' };
+    if (status === 'picked_up') return { text: 'Picked Up', cls: 'picked' };
+    return { text: status || 'In Progress', cls: 'ongoing' };
+  };
+  tbody.innerHTML = cases.map(c => {
+    const statusInfo = getStatusInfo(c.patient_status);
+    return `
     <tr>
       <td class="mono">${c.case_id || '—'}</td>
       <td class="mono">${(c.timestamp||'').slice(11,19)}</td>
@@ -446,7 +463,9 @@ function updateTable(cases) {
       <td class="mono">${c.ambulance_id||c.ambulance||'—'}</td>
       <td class="trunc">${c.hospital_name||c.hospital||'—'}</td>
       <td>${c.specialty||'—'}</td>
-    </tr>`).join('');
+      <td><span class="status-tag status-${statusInfo.cls}">${statusInfo.text}</span></td>
+    </tr>`;
+  }).join('');
 }
 
 // ── Init ──────────────────────────────────────────────────────────────

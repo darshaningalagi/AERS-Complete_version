@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AERS - Patient Portal</title>
+    <style>
+        :root {
+            --red: #DC2626;
+            --red-bg: #FEF2F2;
+            --red-border: #FECACA;
+            --amber: #D97706;
+            --amber-bg: #FFFBEB;
+            --green: #16A34A;
+            --green-bg: #F0FDF4;
+            --green-border: #BBF7D0;
+            --blue: #1D4ED8;
+            --blue-bg: #EFF6FF;
+            --text: #111827;
+            --muted: #6B7280;
+            --border: #E5E7EB;
+            --bg: #F9FAFB;
+            --white: #FFFFFF;
+            --font: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: var(--white);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--red);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--red);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: var(--muted);
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover, .nav-links a.active {
+            color: var(--blue);
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+        }
+
+        .card {
+            background: var(--white);
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-header {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--blue);
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--red);
+            color: white;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            background: #B91C1C;
+        }
+
+        .btn-primary:disabled {
+            background: var(--muted);
+            cursor: not-allowed;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status-queued {
+            background: var(--amber-bg);
+            color: var(--amber);
+        }
+
+        .status-dispatched {
+            background: var(--blue-bg);
+            color: var(--blue);
+        }
+
+        .status-enroute {
+            background: var(--blue-bg);
+            color: var(--blue);
+        }
+
+        .status-arrived {
+            background: var(--amber-bg);
+            color: var(--amber);
+        }
+
+        .status-picked {
+            background: var(--green-bg);
+            color: var(--green);
+        }
+
+        .status-delivered {
+            background: var(--green-bg);
+            color: var(--green);
+        }
+
+        .notification-panel {
+            display: none;
+        }
+
+        .notification-panel.show {
+            display: block;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .info-item {
+            padding: 1rem;
+            background: var(--bg);
+            border-radius: 8px;
+        }
+
+        .info-label {
+            font-size: 0.75rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+        }
+
+        .info-value {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .tracking-map {
+            height: 300px;
+            background: var(--bg);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .map-placeholder {
+            text-align: center;
+            color: var(--muted);
+        }
+
+        .ambulance-marker {
+            width: 40px;
+            height: 40px;
+            background: var(--red);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            position: absolute;
+            animation: moveAmbulance 10s ease-in-out infinite;
+        }
+
+        @keyframes moveAmbulance {
+            0% { left: 10%; top: 50%; }
+            50% { left: 80%; top: 50%; }
+            100% { left: 10%; top: 50%; }
+        }
+
+        .timeline {
+            margin-top: 1rem;
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 1rem;
+            padding: 0.75rem 0;
+            border-left: 2px solid var(--border);
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        .timeline-item::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background: var(--border);
+            border-radius: 50%;
+            position: absolute;
+            left: -6px;
+            top: 1rem;
+        }
+
+        .timeline-item.done::before {
+            background: var(--green);
+        }
+
+        .timeline-item.active::before {
+            background: var(--blue);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(29, 78, 216, 0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(29, 78, 216, 0); }
+        }
+
+        .timeline-item.done {
+            color: var(--muted);
+        }
+
+        .timeline-item.active {
+            font-weight: 500;
+        }
+
+        .timeline-time {
+            font-size: 0.875rem;
+            color: var(--muted);
+            min-width: 70px;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .alert-info {
+            background: var(--blue-bg);
+            border: 1px solid var(--blue);
+            color: var(--blue);
+        }
+
+        .alert-success {
+            background: var(--green-bg);
+            border: 1px solid var(--green-border);
+            color: var(--green);
+        }
+
+        .alert-warning {
+            background: var(--amber-bg);
+            border: 1px solid var(--amber);
+            color: var(--amber);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--border);
+            border-radius: 50%;
+            border-top-color: var(--red);
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--muted);
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .conn-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--muted);
+        }
+
+        .conn-dot.online {
+            background: var(--green);
+        }
+
+        .toast-notification {
+            background: var(--blue-bg);
+            border: 1px solid var(--blue);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: slideIn 0.3s ease-out;
+            color: var(--text);
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">A</div>
+            <span>AERS Patient Portal</span>
+        </div>
+        <div class="connection-status">
+            <div class="conn-dot" id="conn-dot"></div>
+            <span id="conn-label">Connecting...</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Emergency Call Form -->
+        <div class="card" id="call-form-card">
+            <div class="card-header">🚨 Make Emergency Call</div>
+            <form id="emergency-form">
+                <div class="form-group">
+                    <label for="description">Describe Your Emergency</label>
+                    <textarea id="description" placeholder="e.g., chest pain, difficulty breathing, severe bleeding..." required></textarea>
+                </div>
+                <div class="info-grid">
+                    <div class="form-group">
+                        <label for="caller_name">Your Name</label>
+                        <input type="text" id="caller_name" placeholder="Enter your name">
+                    </div>
+                    <div class="form-group">
+                        <label for="caller_phone">Phone Number</label>
+                        <input type="tel" id="caller_phone" placeholder="+91-9876543210">
+                    </div>
+                    <div class="form-group">
+                        <label for="lat">Latitude</label>
+                        <input type="number" id="lat" step="0.0001" value="14.4673">
+                    </div>
+                    <div class="form-group">
+                        <label for="lng">Longitude</label>
+                        <input type="number" id="lng" step="0.0001" value="75.9238">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary" id="submit-btn">Call Ambulance</button>
+            </form>
+        </div>
+
+        <!-- Notification Panel -->
+        <div class="card notification-panel" id="notification-panel">
+            <div class="card-header">📋 Your Case Status</div>
+
+            <div class="alert alert-info" id="status-alert">
+                <strong>Case ID:</strong> <span id="case-id">--</span>
+            </div>
+
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Status</div>
+                    <div class="info-value">
+                        <span class="status-badge" id="case-status">Pending</span>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Risk Level</div>
+                    <div class="info-value" id="risk-level">--</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Assigned Ambulance</div>
+                    <div class="info-value" id="ambulance-id">--</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Hospital</div>
+                    <div class="info-value" id="hospital-name">--</div>
+                </div>
+            </div>
+
+            <div class="card-header" style="margin-top: 1rem;">🚑 Ambulance Details</div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Driver</div>
+                    <div class="info-value" id="driver-name">--</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Driver Phone</div>
+                    <div class="info-value" id="driver-phone">--</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">ETA</div>
+                    <div class="info-value" id="eta">--</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Ambulance Type</div>
+                    <div class="info-value" id="amb-type">--</div>
+                </div>
+                <div class="info-item" style="grid-column: span 2;">
+                    <div class="info-label">Live Location</div>
+                    <div class="info-value" id="amb-location" style="font-size: 0.9rem;">--</div>
+                </div>
+            </div>
+
+            <div class="card-header" style="margin-top: 1rem;">🗺️ Live Tracking</div>
+            <div class="tracking-map" id="tracking-map">
+                <div class="map-placeholder" id="map-placeholder">
+                    <p>Waiting for ambulance dispatch...</p>
+                </div>
+            </div>
+
+            <div class="card-header" style="margin-top: 1rem;">📍 Progress Timeline</div>
+            <div class="timeline" id="timeline">
+                <div class="timeline-item" id="timeline-received">
+                    <span class="timeline-time" id="time-received">--:--</span>
+                    <span>Emergency call received</span>
+                </div>
+                <div class="timeline-item" id="timeline-dispatched">
+                    <span class="timeline-time" id="time-dispatched">--:--</span>
+                    <span>Ambulance dispatched</span>
+                </div>
+                <div class="timeline-item" id="timeline-enroute">
+                    <span class="timeline-time" id="time-enroute">--:--</span>
+                    <span>Ambulance en route</span>
+                </div>
+                <div class="timeline-item" id="timeline-arrived">
+                    <span class="timeline-time" id="time-arrived">--:--</span>
+                    <span>Ambulance arrived at scene</span>
+                </div>
+                <div class="timeline-item" id="timeline-picked">
+                    <span class="timeline-time" id="time-picked">--:--</span>
+                    <span>Patient picked up</span>
+                </div>
+                <div class="timeline-item" id="timeline-delivered">
+                    <span class="timeline-time" id="time-delivered">--:--</span>
+                    <span>Arrived at hospital</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Queue Info -->
+        <div class="card notification-panel" id="queue-panel">
+            <div class="alert alert-warning">
+                <strong>All ambulances are busy.</strong><br>
+                Your case is <span id="queue-position">#--</span> in queue.
+            </div>
+            <p style="color: var(--muted); text-align: center;">
+                You will be notified when an ambulance is assigned to you.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const API = window.location.origin;
+        let caseId = null;
+        let ws = null;
+
+        // Connect to WebSocket
+        function connectWS() {
+            ws = new WebSocket(`ws://${location.host}/ws`);
+
+            ws.onopen = () => {
+                document.getElementById('conn-dot').classList.add('online');
+                document.getElementById('conn-label').textContent = 'Connected';
+            };
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                handleWebSocketMessage(msg);
+            };
+
+            ws.onclose = () => {
+                document.getElementById('conn-dot').classList.remove('online');
+                document.getElementById('conn-label').textContent = 'Reconnecting...';
+                setTimeout(connectWS, 3000);
+            };
+
+            ws.onerror = () => ws.close();
+        }
+
+        // Toast notification system
+        function showToastNotification(message) {
+            const container = document.getElementById('toast-container') || createToastContainer();
+            const toast = document.createElement('div');
+            toast.className = 'toast-notification';
+            toast.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" style="background:none;border:none;font-size:16px;cursor:pointer">×</button>
+                </div>
+            `;
+            container.appendChild(toast);
+            // Auto-remove after 30 seconds
+            setTimeout(() => {
+                if (toast.parentElement) toast.remove();
+            }, 30000);
+        }
+
+        function createToastContainer() {
+            const div = document.createElement('div');
+            div.id = 'toast-container';
+            div.style.cssText = 'position:fixed;top:80px;right:20px;z-index:1000;max-width:350px';
+            document.body.appendChild(div);
+            return div;
+        }
+
+        function handleWebSocketMessage(msg) {
+            if (msg.type === 'new_case' && msg.data && msg.data.case_id === caseId) {
+                loadCaseStatus();
+            }
+            if (msg.type === 'queue_resolved' && msg.data && msg.data.case_id === caseId) {
+                showToastNotification('🚑 Ambulance assigned to your case!');
+                loadCaseStatus();
+            }
+            if (msg.type === 'patient_picked_up' && msg.data && msg.data.case_id === caseId) {
+                showToastNotification('🏥 Patient picked up! Heading to hospital.');
+                updatePhase('picked');
+                loadCaseStatus();
+            }
+            if (msg.type === 'patient_delivered' && msg.data && msg.data.case_id === caseId) {
+                showToastNotification('🏨 Patient arrived at hospital!');
+                updatePhase('delivered');
+                loadCaseStatus();
+            }
+            if (msg.type === 'ambulance_status_update' && msg.data) {
+                if (caseId && msg.data.case_id === caseId) {
+                    const status = msg.data.status;
+                    if (status === 'enroute') {
+                        showToastNotification('🚑 Ambulance is on the way to you!');
+                    } else if (status === 'arrived') {
+                        showToastNotification('🚑 Ambulance has arrived at your location!');
+                    }
+                    updatePhaseFromStatus(status);
+                }
+            }
+        }
+
+        async function loadCaseStatus() {
+            if (!caseId) return;
+
+            try {
+                const res = await fetch(`${API}/patient/notification/${caseId}`);
+                const data = await res.json();
+
+                if (data.status === 'queued') {
+                    document.getElementById('queue-panel').classList.add('show');
+                    document.getElementById('queue-position').textContent = data.queue_position || '--';
+                } else if (data.status === 'dispatched') {
+                    document.getElementById('notification-panel').classList.add('show');
+                    document.getElementById('queue-panel').classList.remove('show');
+
+                    if (data.ambulance) {
+                        document.getElementById('ambulance-id').textContent = data.ambulance.id || '--';
+                        document.getElementById('driver-name').textContent = data.ambulance.driver || '--';
+                        document.getElementById('driver-phone').textContent = data.ambulance.phone || '--';
+                        document.getElementById('eta').textContent = data.ambulance.eta ? `${data.ambulance.eta} min` : '--';
+                        document.getElementById('amb-type').textContent = data.ambulance.type || '--';
+                        // Show live location
+                        const ambLoc = data.ambulance.lat && data.ambulance.lng
+                            ? `Lat: ${data.ambulance.lat}, Lng: ${data.ambulance.lng}`
+                            : (data.ambulance.location || '--');
+                        document.getElementById('amb-location').textContent = ambLoc;
+
+                        // Show tracking map
+                        document.getElementById('map-placeholder').innerHTML = `
+                            <div class="ambulance-marker" id="amb-marker">${data.ambulance.id}</div>
+                            <p style="margin-top: 60px;">Ambulance ${data.ambulance.id} is on the way</p>
+                        `;
+                    }
+
+                    document.getElementById('hospital-name').textContent = data.hospital || '--';
+                    document.getElementById('case-status').textContent = data.status;
+                    updatePhaseFromStatus(data.phase);
+                }
+            } catch (e) {
+                console.error('Error loading case status:', e);
+            }
+        }
+
+        function updatePhase(phase) {
+            const phases = ['received', 'dispatched', 'enroute', 'arrived', 'picked', 'delivered'];
+            const idx = phases.indexOf(phase);
+
+            for (let i = 0; i <= idx; i++) {
+                document.getElementById(`timeline-${phases[i]}`).classList.add('done');
+            }
+            document.getElementById(`timeline-${phase}`).classList.add('active');
+            document.getElementById(`time-${phase}`).textContent = new Date().toLocaleTimeString();
+        }
+
+        function updatePhaseFromStatus(status) {
+            const statusToPhase = {
+                'dispatched': 'dispatched',
+                'enroute': 'enroute',
+                'arrived': 'arrived',
+                'patient_picked': 'picked',
+                'hospital_enroute': 'picked',
+                'delivered': 'delivered'
+            };
+            const phase = statusToPhase[status];
+            if (phase) updatePhase(phase);
+        }
+
+        // Form submission
+        document.getElementById('emergency-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Processing...';
+
+            const data = {
+                description: document.getElementById('description').value,
+                caller_name: document.getElementById('caller_name').value || 'Anonymous',
+                caller_phone: document.getElementById('caller_phone').value || 'Unknown',
+                lat: parseFloat(document.getElementById('lat').value) || 14.4673,
+                lng: parseFloat(document.getElementById('lng').value) || 75.9238
+            };
+
+            try {
+                const res = await fetch(`${API}/patient/call`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await res.json();
+
+                if (result.success) {
+                    caseId = result.case_id;
+                    document.getElementById('case-id').textContent = caseId;
+                    document.getElementById('risk-level').textContent = result.triage.risk_level;
+                    document.getElementById('time-received').textContent = result.timestamp.split(' ')[1];
+
+                    if (result.dispatch.status === 'queued') {
+                        document.getElementById('queue-panel').classList.add('show');
+                        document.getElementById('case-status').textContent = 'Queued';
+                    } else {
+                        document.getElementById('notification-panel').classList.add('show');
+                        if (result.dispatch.ambulance) {
+                            document.getElementById('ambulance-id').textContent = result.dispatch.ambulance.id;
+                            document.getElementById('driver-name').textContent = result.dispatch.ambulance.driver;
+                            document.getElementById('driver-phone').textContent = result.dispatch.ambulance.phone;
+                            document.getElementById('eta').textContent = result.dispatch.ambulance.eta_minutes + ' min';
+                            document.getElementById('amb-type').textContent = result.dispatch.ambulance.type;
+                            document.getElementById('time-dispatched').textContent = result.timestamp.split(' ')[1];
+                            updatePhase('dispatched');
+                        }
+                        document.getElementById('hospital-name').textContent = result.hospital.name;
+                    }
+
+                    // Auto-refresh status every 5 seconds
+                    setInterval(() => loadCaseStatus(), 5000);
+                } else {
+                    alert('Error: ' + (result.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Call Ambulance';
+        });
+
+        // Initialize
+        connectWS();
+    </script>
+</body>
+</html>

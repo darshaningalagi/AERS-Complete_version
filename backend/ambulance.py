@@ -14,27 +14,48 @@ from datetime import datetime
 from typing import Optional
 
 # ─── Fleet ────────────────────────────────────────────────────────────
+# Tracking fields: destination_hospital_id, destination_hospital_name,
+#                  destination_hospital_lat/lng, patient_location, patient_description
 AMBULANCES = [
     {"id":"AMB-01","driver":"Rajesh Sharma", "phone":"+91-9876543210",
      "type":"ALS","location":"Central Station","lat":14.4673,"lng":75.9238,
-     "status":"available","assigned_case":None,"assigned_risk":None,
-     "equipment":["defibrillator","ventilator","cardiac monitor","IV kit"]},
+     "status":"available","assigned_case":None,"assigned_risk":None,"current_phase":"available",
+     "equipment":["defibrillator","ventilator","cardiac monitor","IV kit"],
+     "destination_hospital_id":None,"destination_hospital_name":None,
+     "destination_hospital_lat":None,"destination_hospital_lng":None,
+     "patient_location_lat":None,"patient_location_lng":None,
+     "patient_description":None,"case_id":None},
     {"id":"AMB-03","driver":"Kavita Patel",  "phone":"+91-9876543211",
      "type":"ALS","location":"North Post",    "lat":14.4820,"lng":75.9310,
-     "status":"available","assigned_case":None,"assigned_risk":None,
-     "equipment":["defibrillator","ventilator","cardiac monitor","IV kit"]},
+     "status":"available","assigned_case":None,"assigned_risk":None,"current_phase":"available",
+     "equipment":["defibrillator","ventilator","cardiac monitor","IV kit"],
+     "destination_hospital_id":None,"destination_hospital_name":None,
+     "destination_hospital_lat":None,"destination_hospital_lng":None,
+     "patient_location_lat":None,"patient_location_lng":None,
+     "patient_description":None,"case_id":None},
     {"id":"AMB-07","driver":"Manoj Kumar",   "phone":"+91-9876543212",
      "type":"BLS","location":"West Unit",     "lat":14.4590,"lng":75.9100,
-     "status":"available","assigned_case":None,"assigned_risk":None,
-     "equipment":["stretcher","oxygen","first aid","spine board"]},
+     "status":"available","assigned_case":None,"assigned_risk":None,"current_phase":"available",
+     "equipment":["stretcher","oxygen","first aid","spine board"],
+     "destination_hospital_id":None,"destination_hospital_name":None,
+     "destination_hospital_lat":None,"destination_hospital_lng":None,
+     "patient_location_lat":None,"patient_location_lng":None,
+     "patient_description":None,"case_id":None},
     {"id":"AMB-12","driver":"Sunita Reddy",  "phone":"+91-9876543213",
      "type":"BLS","location":"South Base",    "lat":14.4520,"lng":75.9280,
-     "status":"available","assigned_case":None,"assigned_risk":None,
-     "equipment":["stretcher","oxygen","first aid","spine board"]},
+     "status":"available","assigned_case":None,"assigned_risk":None,"current_phase":"available",
+     "equipment":["stretcher","oxygen","first aid","spine board"],
+     "destination_hospital_id":None,"destination_hospital_name":None,
+     "destination_hospital_lat":None,"destination_hospital_lng":None,
+     "patient_location_lat":None,"patient_location_lng":None,
+     "patient_description":None,"case_id":None},
 ]
 
 # Scene time per risk level (minutes)
 SCENE_TIME = {"Critical": 20, "Urgent": 15, "Low": 10}
+
+# Hospital transport time (minutes) - time to drive from scene to hospital
+HOSPITAL_TRANSPORT_TIME = 2
 
 # Priority value — lower = more urgent
 PRIORITY = {"Critical": 1, "Urgent": 2, "Low": 3}
@@ -89,8 +110,8 @@ def haversine(lat1, lng1, lat2, lng2) -> float:
 
 
 def estimate_eta(distance_km: float, risk: str) -> int:
-    speed_kmh = 80 if risk == "Critical" else 60
-    return max(2, round((distance_km / speed_kmh) * 60))
+    # Return 1 minute to reach patient + 1 minute to hospital = 2 min total
+    return 2
 
 
 # ─── Priority pool selection ──────────────────────────────────────────
@@ -143,11 +164,14 @@ def _try_preempt(incident_lat: float, incident_lng: float,
 
         # Queue the victim's case so it gets the next free unit
         if chosen["assigned_case"] and chosen["assigned_risk"]:
+            # Use original patient location from the ambulance's tracking data
+            victim_lat = chosen.get("patient_location_lat", chosen["lat"])
+            victim_lng = chosen.get("patient_location_lng", chosen["lng"])
             _enqueue({
                 "case_id":     chosen["assigned_case"],
                 "description": f"[Re-queued: preempted by {risk} case]",
-                "lat":         incident_lat,
-                "lng":         incident_lng,
+                "lat":         victim_lat,
+                "lng":         victim_lng,
                 "risk":        chosen["assigned_risk"],
                 "queued_at":   datetime.now().strftime("%H:%M:%S"),
                 "caller_name": "System",
@@ -227,12 +251,55 @@ def mark_ambulance_dispatched(amb_id: str, case_id: str,
     return False
 
 
+def set_dispatch_details(amb_id: str, case_id: str, patient_lat: float, patient_lng: float,
+                        patient_description: str, hospital_id: str, hospital_name: str,
+                        hospital_lat: float, hospital_lng: float) -> bool:
+    """Set complete dispatch details including tracking info."""
+    for a in AMBULANCES:
+        if a["id"] == amb_id:
+            a["case_id"] = case_id
+            a["patient_location_lat"] = patient_lat
+            a["patient_location_lng"] = patient_lng
+            a["patient_description"] = patient_description
+            a["destination_hospital_id"] = hospital_id
+            a["destination_hospital_name"] = hospital_name
+            a["destination_hospital_lat"] = hospital_lat
+            a["destination_hospital_lng"] = hospital_lng
+            return True
+    return False
+
+
+def clear_dispatch_details(amb_id: str) -> bool:
+    """Clear dispatch details when ambulance becomes available."""
+    for a in AMBULANCES:
+        if a["id"] == amb_id:
+            a["case_id"] = None
+            a["patient_location_lat"] = None
+            a["patient_location_lng"] = None
+            a["patient_description"] = None
+            a["destination_hospital_id"] = None
+            a["destination_hospital_name"] = None
+            a["destination_hospital_lat"] = None
+            a["destination_hospital_lng"] = None
+            return True
+    return False
+
+
 def mark_ambulance_available(amb_id: str) -> bool:
     for a in AMBULANCES:
         if a["id"] == amb_id:
             a["status"]        = "available"
             a["assigned_case"] = None
             a["assigned_risk"] = None
+            # Clear all dispatch tracking details
+            a["case_id"] = None
+            a["patient_location_lat"] = None
+            a["patient_location_lng"] = None
+            a["patient_description"] = None
+            a["destination_hospital_id"] = None
+            a["destination_hospital_name"] = None
+            a["destination_hospital_lat"] = None
+            a["destination_hospital_lng"] = None
             return True
     return False
 
@@ -243,20 +310,92 @@ def mark_ambulance_busy(amb_id: str) -> bool:
 
 
 # ─── Auto-release + auto-assign ───────────────────────────────────────
-def schedule_release(amb_id: str, risk: str, eta_minutes: int,
-                     on_release_callback=None):
-    """
-    After (ETA + scene_time) minutes:
-      1. Mark unit available.
-      2. If a case is waiting in the queue, assign this unit to it immediately.
-      3. Call on_release_callback(amb_id, queued_entry) if provided.
-    """
-    total_seconds = (eta_minutes + SCENE_TIME.get(risk, 15)) * 60
+# Timeline progression times (in seconds)
+PICKUP_DELAY = 60  # 1 minute after dispatch to pick up patient
+ARRIVAL_DELAY = 60  # 1 minute after pickup to arrive at hospital
 
-    async def _release():
-        await asyncio.sleep(total_seconds)
+def schedule_release(amb_id: str, risk: str, eta_minutes: int,
+                     on_release_callback=None, hospital_id=None, case_id=None):
+    """
+    Automatic timeline progression:
+    1. At dispatch: phase = dispatched (set in decision.py)
+    2. After PICKUP_DELAY (1 min): phase = patient_picked, notify hospital
+    3. After ARRIVAL_DELAY more (1 min): phase = delivered, release ambulance
+
+    Timeline: dispatch → pickup (1 min) → delivered (1 min) → available
+    """
+    # Get case_id from ambulance if not provided
+    if not case_id:
+        for a in AMBULANCES:
+            if a["id"] == amb_id:
+                case_id = a.get("case_id")
+                break
+
+    async def _auto_progress():
+        # Wait 1 minute then mark as picked up
+        await asyncio.sleep(PICKUP_DELAY)
+        update_ambulance_status(amb_id, "patient_picked", case_id)
+        print(f"[AMB] {amb_id} - Patient picked up (auto-progress)")
+
+        # Notify hospital about incoming patient
+        if hospital_id:
+            from backend.hospital import notify_hospital, get_hospital_list
+            # Find hospital name
+            hospital_name = hospital_id
+            for h in get_hospital_list():
+                if h["id"] == hospital_id:
+                    hospital_name = h["name"]
+                    break
+            notify_hospital(hospital_id, case_id or "unknown", "Patient", 1,
+                          "Patient picked up", risk)
+            print(f"[HOSPITAL] {hospital_name} notified - patient picked up")
+
+        # Broadcast picked up event
+        from backend.decision import _broadcast_fn
+        if _broadcast_fn:
+            try:
+                await _broadcast_fn({
+                    "type": "patient_picked_up",
+                    "data": {
+                        "case_id": case_id,
+                        "ambulance": amb_id,
+                        "hospital": hospital_name,
+                        "message": f"Patient picked up by {amb_id}. Auto-progressing to hospital."
+                    }
+                })
+            except:
+                pass
+
+        # Wait 1 more minute then mark as delivered
+        await asyncio.sleep(ARRIVAL_DELAY)
+        update_ambulance_status(amb_id, "delivered", case_id)
+        print(f"[AMB] {amb_id} - Patient delivered at hospital (auto-progress)")
+
+        # Now release ambulance
         mark_ambulance_available(amb_id)
-        print(f"[AMB] {amb_id} available (after {total_seconds//60}min — {risk} case)")
+        print(f"[AMB] {amb_id} available (after auto-progress)")
+
+        # Release hospital bed if patient was admitted and remove from incoming
+        if hospital_id:
+            import backend.hospital as hos_mod
+            hos_mod.release_bed(hospital_id)
+            result = hos_mod.remove_incoming_patient(hospital_id, case_id)
+            print(f"[HOSPITAL] Bed released at {hospital_id}")
+            print(f"[DEBUG] Removed incoming {case_id}: {result}")
+
+        # Broadcast delivered event
+        if _broadcast_fn:
+            try:
+                await _broadcast_fn({
+                    "type": "patient_delivered",
+                    "data": {
+                        "case_id": case_id,
+                        "ambulance": amb_id,
+                        "message": f"Patient delivered to hospital. {amb_id} is now available."
+                    }
+                })
+            except:
+                pass
 
         # Auto-assign to next waiting case
         next_case = _dequeue()
@@ -272,15 +411,29 @@ def schedule_release(amb_id: str, risk: str, eta_minutes: int,
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            asyncio.create_task(_release())
+            asyncio.create_task(_auto_progress())
         else:
             import threading, time
             def _thread():
-                time.sleep(total_seconds)
+                # Phase 1: Wait 1 min, then pickup
+                time.sleep(PICKUP_DELAY)
+                update_ambulance_status(amb_id, "patient_picked", case_id)
+                print(f"[AMB] {amb_id} - Patient picked up (auto-progress)")
+                if hospital_id:
+                    from backend.hospital import notify_hospital
+                    notify_hospital(hospital_id, case_id or "unknown", "Patient", 1,
+                                  "Patient picked up", risk)
+
+                # Phase 2: Wait 1 more min, then deliver
+                time.sleep(ARRIVAL_DELAY)
+                update_ambulance_status(amb_id, "delivered", case_id)
+                print(f"[AMB] {amb_id} - Patient delivered (auto-progress)")
                 mark_ambulance_available(amb_id)
-                next_case = _dequeue()
-                if next_case and on_release_callback:
-                    pass  # can't await in thread context during tests
+                if hospital_id:
+                    import backend.hospital as hos_mod
+                    hos_mod.release_bed(hospital_id)
+                    hos_mod.remove_incoming_patient(hospital_id, case_id)
+
             threading.Thread(target=_thread, daemon=True).start()
     except RuntimeError:
         pass
@@ -293,3 +446,66 @@ def get_fleet_status() -> list:
 
 def get_available_count() -> int:
     return sum(1 for a in AMBULANCES if a["status"] == "available")
+
+
+# ─── Extended Status Tracking ───────────────────────────────────────────
+# Status flow: available → dispatched → enroute → arrived → patient_picked → hospital_enroute → delivered → available
+AMBULANCE_PHASES = [
+    "available", "dispatched", "enroute", "arrived",
+    "patient_picked", "hospital_enroute", "delivered"
+]
+
+
+def get_ambulance_by_id(amb_id: str) -> Optional[dict]:
+    """Get ambulance details by ID."""
+    for a in AMBULANCES:
+        if a["id"] == amb_id:
+            return dict(a)
+    return None
+
+
+def update_ambulance_status(amb_id: str, status: str, case_id: str = None) -> bool:
+    """
+    Update ambulance status with phase tracking.
+    Valid statuses: dispatched, enroute, arrived, patient_picked, hospital_enroute, delivered
+    """
+    if status not in AMBULANCE_PHASES:
+        return False
+
+    for a in AMBULANCES:
+        if a["id"] == amb_id:
+            a["current_phase"] = status
+            if case_id:
+                a["assigned_case"] = case_id
+            return True
+    return False
+
+
+def get_all_ambulances_status() -> list:
+    """Get status of all ambulances including tracking info for main dashboard."""
+    return [
+        {
+            "id": a["id"],
+            "driver": a["driver"],
+            "phone": a["phone"],
+            "type": a["type"],
+            "status": a["status"],
+            "current_phase": a.get("current_phase", "available"),
+            "assigned_case": a.get("assigned_case"),
+            "location": a["location"],
+            "lat": a["lat"],
+            "lng": a["lng"],
+            # Tracking info
+            "tracking": {
+                "case_id": a.get("case_id"),
+                "patient_description": a.get("patient_description"),
+                "patient_location_lat": a.get("patient_location_lat"),
+                "patient_location_lng": a.get("patient_location_lng"),
+                "destination_hospital_id": a.get("destination_hospital_id"),
+                "destination_hospital_name": a.get("destination_hospital_name"),
+                "destination_hospital_lat": a.get("destination_hospital_lat"),
+                "destination_hospital_lng": a.get("destination_hospital_lng"),
+            }
+        }
+        for a in AMBULANCES
+    ]

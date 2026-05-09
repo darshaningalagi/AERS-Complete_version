@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AERS - Hospital Dashboard</title>
+    <style>
+        :root {
+            --red: #DC2626;
+            --red-bg: #FEF2F2;
+            --red-border: #FECACA;
+            --amber: #D97706;
+            --amber-bg: #FFFBEB;
+            --green: #16A34A;
+            --green-bg: #F0FDF4;
+            --green-border: #BBF7D0;
+            --blue: #1D4ED8;
+            --blue-bg: #EFF6FF;
+            --text: #111827;
+            --muted: #6B7280;
+            --border: #E5E7EB;
+            --bg: #F9FAFB;
+            --white: #FFFFFF;
+            --font: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: var(--white);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--green);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo-icon {
+            width: 28px;
+            height: 28px;
+            background: var(--green);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.875rem;
+        }
+
+        select {
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 1rem;
+            background: var(--white);
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+        }
+
+        .card {
+            background: var(--white);
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-header {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .metrics-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .metric-card {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 1.25rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .metric-value.green { color: var(--green); }
+        .metric-value.red { color: var(--red); }
+        .metric-value.amber { color: var(--amber); }
+        .metric-value.blue { color: var(--blue); }
+
+        .metric-label {
+            font-size: 0.875rem;
+            color: var(--muted);
+            margin-top: 0.25rem;
+        }
+
+        .patient-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .patient-card {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 1rem;
+            border-left: 4px solid var(--blue);
+        }
+
+        .patient-card.critical {
+            border-left-color: var(--red);
+            background: var(--red-bg);
+        }
+
+        .patient-card.urgent {
+            border-left-color: var(--amber);
+            background: var(--amber-bg);
+        }
+
+        .patient-card.low {
+            border-left-color: var(--green);
+            background: var(--green-bg);
+        }
+
+        .patient-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.75rem;
+        }
+
+        .patient-name {
+            font-weight: 600;
+            font-size: 1.125rem;
+        }
+
+        .risk-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .risk-critical { background: var(--red-bg); color: var(--red); }
+        .risk-urgent { background: var(--amber-bg); color: var(--amber); }
+        .risk-low { background: var(--green-bg); color: var(--green); }
+
+        .patient-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--muted);
+        }
+
+        .patient-details strong {
+            color: var(--text);
+        }
+
+        .alert-box {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            animation: pulse 2s infinite;
+        }
+
+        .alert-box.critical {
+            background: var(--red-bg);
+            border: 1px solid var(--red-border);
+            color: var(--red);
+        }
+
+        .toast-notification {
+            background: var(--blue-bg);
+            border: 1px solid var(--blue);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: slideIn 0.3s ease-out;
+            color: var(--text);
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--muted);
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--text);
+        }
+
+        .beds-display {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .bed {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .bed.available {
+            background: var(--green-bg);
+            color: var(--green);
+            border: 1px solid var(--green-border);
+        }
+
+        .bed.occupied {
+            background: var(--red-bg);
+            color: var(--red);
+            border: 1px solid var(--red-border);
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-small {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.75rem;
+        }
+
+        .btn-green {
+            background: var(--green);
+            color: white;
+        }
+
+        .btn-green:hover {
+            background: #15803D;
+        }
+
+        .btn-red {
+            background: var(--red);
+            color: white;
+        }
+
+        .btn-red:hover {
+            background: #B91C1C;
+        }
+
+        .capacity-bar {
+            height: 8px;
+            background: var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .capacity-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+
+        .capacity-fill.green { background: var(--green); }
+        .capacity-fill.amber { background: var(--amber); }
+        .capacity-fill.red { background: var(--red); }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">+</div>
+            <span>Hospital Dashboard</span>
+        </div>
+        <select id="hospital-select">
+            <option value="">Select Hospital</option>
+            <option value="H-001">City General Hospital</option>
+            <option value="H-002">Apollo Medical Center</option>
+            <option value="H-003">St. Mary's Hospital</option>
+            <option value="H-004">NIMHANS Trauma Center</option>
+        </select>
+    </header>
+
+    <div class="container">
+        <!-- No Hospital Selected -->
+        <div class="card" id="no-hospital-card">
+            <div class="empty-state">
+                <h3>Select a Hospital</h3>
+                <p>Choose your hospital from the dropdown above</p>
+            </div>
+        </div>
+
+        <!-- Hospital Dashboard -->
+        <div id="dashboard" style="display: none;">
+            <!-- ICU Beds Overview -->
+            <div class="metrics-row">
+                <div class="metric-card">
+                    <div class="metric-value green" id="icu-available">--</div>
+                    <div class="metric-label">ICU Beds Available</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value red" id="icu-total">--</div>
+                    <div class="metric-label">Total ICU Beds</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value amber" id="capacity-pct">--%</div>
+                    <div class="metric-label">Capacity</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value blue" id="incoming-count">0</div>
+                    <div class="metric-label">Incoming Patients</div>
+                </div>
+            </div>
+
+            <!-- Incoming Patients -->
+            <div class="card">
+                <div class="card-header">
+                    <span>🚑 Incoming Patients</span>
+                    <span id="incoming-badge" class="risk-badge risk-critical" style="display: none;">New!</span>
+                </div>
+
+                <div id="incoming-patients">
+                    <div class="empty-state">
+                        <p>No incoming patients</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ICU Bed Status -->
+            <div class="card">
+                <div class="card-header">🛏️ ICU Bed Status</div>
+                <div class="section-title">Bed Availability</div>
+                <div class="beds-display" id="beds-display"></div>
+                <div class="section-title" style="margin-top: 1rem;">Capacity</div>
+                <div class="capacity-bar">
+                    <div class="capacity-fill" id="capacity-fill" style="width: 0%"></div>
+                </div>
+                <p style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--muted);">
+                    <span id="beds-occupied" style="color: var(--red); font-weight: bold;">0</span> beds occupied |
+                    <span id="beds-available" style="color: var(--green); font-weight: bold;">--</span> beds available |
+                    Total: <span id="beds-total" style="font-weight: bold;">--</span>
+                </p>
+
+                <!-- ICU Bed Management -->
+                <div class="section-title" style="margin-top: 1rem;">Bed Management</div>
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                    <button class="btn btn-small btn-green" onclick="admitPatient()">+ Patient Admitted</button>
+                    <button class="btn btn-small btn-red" onclick="dischargePatient()">- Patient Discharged</button>
+                </div>
+                <div style="margin-top: 0.75rem; font-size: 0.875rem; color: var(--muted);">
+                    Or set total capacity:
+                    <input type="number" id="total-beds-input" min="1" max="50" style="width: 60px; padding: 4px; border: 1px solid var(--border); border-radius: 4px;" placeholder="20">
+                    <button class="btn btn-small" onclick="setTotalBeds()">Set</button>
+                </div>
+            </div>
+
+            <!-- Hospital Info -->
+            <div class="card">
+                <div class="card-header">🏥 Hospital Information</div>
+                <div class="patient-details" id="hospital-info">
+                    <div><strong>Name:</strong> <span id="h-name">--</span></div>
+                    <div><strong>Address:</strong> <span id="h-address">--</span></div>
+                    <div><strong>Contact:</strong> <span id="h-contact">--</span></div>
+                    <div><strong>Specialties:</strong> <span id="h-specialties">--</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = window.location.origin;
+        let currentHospitalId = null;
+        let ws = null;
+
+        // Connect to WebSocket
+        function connectWS() {
+            ws = new WebSocket(`ws://${location.host}/ws`);
+
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                console.log('WebSocket message:', msg);
+                if (msg.type === 'hospital_alert' || msg.type === 'patient_picked_up') {
+                    if (currentHospitalId) {
+                        // Show toast notification that auto-removes after 1 min
+                        if (msg.data && msg.data.message) {
+                            showToastNotification(msg.data.message);
+                        }
+                        loadDashboard();
+                    }
+                }
+            };
+
+            ws.onclose = () => setTimeout(connectWS, 3000);
+            ws.onerror = () => ws.close();
+        }
+
+        // Toast notification system - auto-removes after 1 minute
+        function showToastNotification(message) {
+            const container = document.getElementById('toast-container') || createToastContainer();
+            const toast = document.createElement('div');
+            toast.className = 'toast-notification';
+            toast.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" style="background:none;border:none;font-size:16px;cursor:pointer">×</button>
+                </div>
+                <div style="font-size:10px;color:#6B7280;margin-top:4px">Will auto-remove in 1 min</div>
+            `;
+            container.appendChild(toast);
+            // Auto-remove after 1 minute
+            setTimeout(() => {
+                if (toast.parentElement) toast.remove();
+            }, 60000);
+        }
+
+        function createToastContainer() {
+            const div = document.createElement('div');
+            div.id = 'toast-container';
+            div.style.cssText = 'position:fixed;top:80px;right:20px;z-index:1000;max-width:350px';
+            document.body.appendChild(div);
+            return div;
+        }
+
+        // Load hospital dashboard
+        document.getElementById('hospital-select').addEventListener('change', (e) => {
+            currentHospitalId = e.target.value;
+            if (currentHospitalId) {
+                loadDashboard();
+                // Auto-refresh every 5 seconds
+                setInterval(loadDashboard, 5000);
+            }
+        });
+
+        async function loadDashboard() {
+            if (!currentHospitalId) return;
+
+            try {
+                const res = await fetch(`${API}/hospital/dashboard/${currentHospitalId}`);
+                const data = await res.json();
+
+                showDashboard(data);
+            } catch (e) {
+                console.error('Error:', e);
+            }
+        }
+
+        function showDashboard(data) {
+            document.getElementById('no-hospital-card').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+
+            const h = data.hospital;
+            const incoming = data.incoming_patients || [];
+
+            // Backend stores: icu_beds = available beds, capacity_pct = occupancy %
+            // Total beds is fixed at 20
+            const totalBeds = 20;
+            const available = h.icu_beds;
+            const occupied = totalBeds - available;
+
+            // Update metrics
+            document.getElementById('icu-available').textContent = available;
+            document.getElementById('icu-total').textContent = totalBeds;
+            document.getElementById('capacity-pct').textContent = h.capacity_pct + '%';
+            document.getElementById('incoming-count').textContent = incoming.length;
+
+            // Update hospital info
+            document.getElementById('h-name').textContent = h.name;
+            document.getElementById('h-address').textContent = h.address;
+            document.getElementById('h-contact').textContent = h.contact;
+            document.getElementById('h-specialties').textContent = h.specialties.join(', ');
+
+            // Update capacity bar
+            const fill = document.getElementById('capacity-fill');
+            fill.style.width = h.capacity_pct + '%';
+            fill.className = 'capacity-fill';
+            if (h.capacity_pct < 60) fill.classList.add('green');
+            else if (h.capacity_pct < 85) fill.classList.add('amber');
+            else fill.classList.add('red');
+
+            document.getElementById('beds-total').textContent = totalBeds;
+            document.getElementById('beds-occupied').textContent = occupied;
+            document.getElementById('beds-available').textContent = available;
+
+            const bedsDisplay = document.getElementById('beds-display');
+            bedsDisplay.innerHTML = '';
+
+            // Show occupied beds (red) - patient in bed
+            for (let i = 0; i < occupied; i++) {
+                bedsDisplay.innerHTML += `<div class="bed occupied" title="Occupied">${i + 1}</div>`;
+            }
+            // Show available beds (green) - empty bed
+            for (let i = 0; i < available; i++) {
+                bedsDisplay.innerHTML += `<div class="bed available" title="Available">${occupied + i + 1}</div>`;
+            }
+
+            // Show incoming patients
+            const patientsList = document.getElementById('incoming-patients');
+            if (incoming.length === 0) {
+                patientsList.innerHTML = '<div class="empty-state"><p>No incoming patients</p></div>';
+                document.getElementById('incoming-badge').style.display = 'none';
+            } else {
+                patientsList.innerHTML = incoming.map(p => `
+                    <div class="patient-card ${p.risk_level.toLowerCase()}">
+                        <div class="patient-header">
+                            <span class="patient-name">${p.patient_name}</span>
+                            <span class="risk-badge risk-${p.risk_level.toLowerCase()}">${p.risk_level}</span>
+                        </div>
+                        <div class="patient-details">
+                            <div><strong>Case ID:</strong> ${p.case_id}</div>
+                            <div><strong>ETA:</strong> ${p.eta_minutes} min</div>
+                            <div><strong>Description:</strong> ${p.description.substring(0, 50)}...</div>
+                            <div><strong>Notified:</strong> ${p.notified_at}</div>
+                        </div>
+                    </div>
+                `).join('');
+
+                // Show notification badge
+                document.getElementById('incoming-badge').style.display = 'inline-block';
+                document.getElementById('incoming-badge').textContent = `${incoming.length} New!`;
+            }
+        }
+
+        // ICU Bed Management Functions
+        async function admitPatient() {
+            // Patient admitted - occupies a bed (ICU beds decrease in backend, but to user it looks like occupied)
+            if (!currentHospitalId) return;
+            try {
+                await fetch(`${API}/hospital/${currentHospitalId}/beds/remove?beds=1`, { method: 'POST' });
+                showToastNotification('Patient admitted - bed occupied');
+                loadDashboard();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function dischargePatient() {
+            // Patient discharged - bed becomes available (ICU beds increase in backend)
+            if (!currentHospitalId) return;
+            try {
+                await fetch(`${API}/hospital/${currentHospitalId}/beds/add?beds=1`, { method: 'POST' });
+                showToastNotification('Patient discharged - bed available');
+                loadDashboard();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function setTotalBeds() {
+            if (!currentHospitalId) return;
+            const total = parseInt(document.getElementById('total-beds-input').value);
+            if (!total || total < 1 || total > 50) {
+                alert('Please enter a valid number between 1 and 50');
+                return;
+            }
+            try {
+                // Set capacity_pct to calculate total beds (0% = all empty)
+                await fetch(`${API}/hospital/${currentHospitalId}/beds`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ capacity_pct: 0 })
+                });
+                showToastNotification(`Total ICU capacity set to ${total} beds`);
+                loadDashboard();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // Auto-select first hospital and load
+        document.addEventListener('DOMContentLoaded', () => {
+            const select = document.getElementById('hospital-select');
+            if (select.options.length > 1) {
+                select.selectedIndex = 1;
+                currentHospitalId = select.value;
+                loadDashboard();
+                setInterval(loadDashboard, 5000);
+            }
+        });
+
+        // Initialize
+        connectWS();
+    </script>
+</body>
+</html>

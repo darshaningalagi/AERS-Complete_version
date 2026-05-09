@@ -9,6 +9,7 @@ import os
 import json
 from datetime import datetime
 from contextlib import contextmanager
+from typing import Optional
 
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'aers.db')
 
@@ -50,14 +51,16 @@ def init_db():
             hospital_name TEXT,
             specialty     TEXT,
             dispatch_status TEXT,
-            full_response TEXT   -- JSON blob of complete API response
+            delivery_status TEXT DEFAULT 'ongoing',
+            delivery_time TEXT,
+            full_response TEXT
         );
 
         CREATE TABLE IF NOT EXISTS ambulance_events (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp   TEXT NOT NULL,
             amb_id      TEXT NOT NULL,
-            event       TEXT NOT NULL,  -- dispatched | returned | manual_reset
+            event       TEXT NOT NULL,
             case_id     TEXT
         );
 
@@ -75,6 +78,15 @@ def init_db():
             error         TEXT
         );
         """)
+        # Add missing columns if they don't exist (migration)
+        try:
+            conn.execute("ALTER TABLE cases ADD COLUMN delivery_status TEXT DEFAULT 'ongoing'")
+        except:
+            pass
+        try:
+            conn.execute("ALTER TABLE cases ADD COLUMN delivery_time TEXT")
+        except:
+            pass
     print(f"[DB] Initialized at {DB_PATH}")
 
 
@@ -96,8 +108,8 @@ def save_case(response: dict):
                 incident_lat, incident_lng,
                 ambulance_id, ambulance_eta,
                 hospital_id, hospital_name, specialty,
-                dispatch_status, full_response
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                dispatch_status, delivery_status, full_response
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             response.get("case_id"),
             response.get("timestamp"),
@@ -114,6 +126,7 @@ def save_case(response: dict):
             hosp.get("name"),
             hosp.get("specialty_matched"),
             dispatch.get("status"),
+            "ongoing",
             json.dumps(response),
         ))
 
@@ -127,7 +140,7 @@ def get_recent_cases(limit: int = 50) -> list:
     return [dict(r) for r in rows]
 
 
-def get_case_by_id(case_id: str) -> dict | None:
+def get_case_by_id(case_id: str) -> Optional[dict]:
     """Return a single case including full JSON response."""
     with get_conn() as conn:
         row = conn.execute(
@@ -188,15 +201,22 @@ def get_analytics() -> dict:
             ).fetchall()
         ]
 
-        # Daily totals last 7 days
-        daily = [
-            dict(r) for r in conn.execute(
-                """SELECT strftime('%Y-%m-%d', timestamp) as day, COUNT(*) as cnt
-                   FROM cases
-                   WHERE timestamp >= datetime('now','-7 days')
-                   GROUP BY day ORDER BY day"""
-            ).fetchall()
-        ]
+        # Daily totals last 7 days (with risk breakdown for stacked chart)
+        daily_raw = conn.execute(
+            """SELECT strftime('%Y-%m-%d', timestamp) as day, risk_level, COUNT(*) as cnt
+               FROM cases
+               WHERE timestamp >= datetime('now','-7 days')
+               GROUP BY day, risk_level
+               ORDER BY day""").fetchall()
+
+        # Group by day and pivot risk levels into separate columns
+        by_day = {}
+        for r in daily_raw:
+            d = r["day"]
+            if d not in by_day:
+                by_day[d] = {"day": d, "Critical": 0, "Urgent": 0, "Low": 0}
+            by_day[d][r["risk_level"]] = r["cnt"]
+        daily = list(by_day.values())
 
         # Sim accuracy
         sim_total = conn.execute("SELECT COUNT(*) FROM sim_runs WHERE status='success'").fetchone()[0]
@@ -250,3 +270,25 @@ def save_sim_run(record: dict):
             record.get("status"),
             record.get("error"),
         ))
+
+
+# ─── Delivery status operations ────────────────────────────────────────
+def update_delivery_status(case_id: str, status: str) -> bool:
+    """Update delivery status for a case (ongoing/delivered)."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if status == "delivered" else None
+    with get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE cases SET delivery_status = ?, delivery_time = ? WHERE case_id = ?",
+            (status, timestamp, case_id)
+        )
+        return cursor.rowcount > 0
+
+
+def get_case_delivery_status(case_id: str) -> str:
+    """Get delivery status for a case."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT delivery_status FROM cases WHERE case_id = ?", (case_id,)
+        ).fetchone()
+        return row["delivery_status"] if row else None

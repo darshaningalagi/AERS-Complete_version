@@ -57,7 +57,7 @@ def predict_risk(description: str) -> dict:
     Run triage classification on the emergency description.
     Returns risk level, confidence, and action metadata.
     """
-    if not description or not description.strip():
+    if not description or not str(description).strip():
         return {
             "success": False,
             "error": "Empty input — please describe the emergency.",
