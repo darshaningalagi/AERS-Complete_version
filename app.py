@@ -43,18 +43,38 @@ if os.path.exists(frontend_path):
     app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
 class EmergencyRequest(BaseModel):
-    description:  str            = Field(..., min_length=1)
-    lat:          Optional[float]= Field(14.4673, ge=-90, le=90)
-    lng:          Optional[float]= Field(75.9238, ge=-180, le=180)
-    caller_name:  Optional[str]  = Field("Anonymous")
-    caller_phone: Optional[str]  = Field("Unknown")
+    description:  str            = Field(..., min_length=3, max_length=500)
+    lat:          Optional[float]= Field(default=14.4673, ge=-90, le=90)
+    lng:          Optional[float]= Field(default=75.9238, ge=-180, le=180)
+    caller_name:  Optional[str]  = Field(default="Anonymous", max_length=100)
+    caller_phone: Optional[str]  = Field(default="Unknown", max_length=20)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "description": "severe chest pain with difficulty breathing",
+                "lat": 14.4673,
+                "lng": 75.9238,
+                "caller_name": "John Doe",
+                "caller_phone": "+91-9876543210"
+            }
+        }
+    }
 
 class TriageOnlyRequest(BaseModel):
-    description: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=3, max_length=500)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "description": "broken leg with visible bone"
+            }
+        }
+    }
 
 class AmbulanceStatusRequest(BaseModel):
-    amb_id: str
-    status: str
+    amb_id: str = Field(..., min_length=1)
+    status: str = Field(..., min_length=1)
 
 # ── WebSocket ──────────────────────────────────────────────────────────
 @app.websocket("/ws")
@@ -226,11 +246,23 @@ def recent_cases(limit: int = 100):
 
 # ── Patient Interface ──────────────────────────────────────────────────
 class PatientCallRequest(BaseModel):
-    description: str = Field(..., min_length=1)
-    lat: Optional[float] = Field(14.4673, ge=-90, le=90)
-    lng: Optional[float] = Field(75.9238, ge=-180, le=180)
-    caller_name: Optional[str] = Field("Anonymous")
-    caller_phone: Optional[str] = Field("Unknown")
+    description: str = Field(..., min_length=3, max_length=500)
+    lat: Optional[float] = Field(default=14.4673, ge=-90, le=90)
+    lng: Optional[float] = Field(default=75.9238, ge=-180, le=180)
+    caller_name: Optional[str] = Field(default="Anonymous", max_length=100)
+    caller_phone: Optional[str] = Field(default="Unknown", max_length=20)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "description": "severe chest pain",
+                "lat": 14.4673,
+                "lng": 75.9238,
+                "caller_name": "Patient Name",
+                "caller_phone": "+91-9876543210"
+            }
+        }
+    }
 
 
 @app.post("/patient/call", tags=["Patient"])
@@ -281,9 +313,19 @@ def patient_get_notification(case_id: str):
 
 # ── Driver Interface ───────────────────────────────────────────────────
 class DriverStatusRequest(BaseModel):
-    amb_id: str
-    status: str
+    amb_id: str = Field(..., min_length=1)
+    status: str = Field(..., min_length=1)
     case_id: Optional[str] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "amb_id": "AMB-01",
+                "status": "enroute",
+                "case_id": "EM-12345678"
+            }
+        }
+    }
 
 
 @app.post("/driver/status", tags=["Driver"])

@@ -71,6 +71,13 @@ def predict_risk(description: str) -> dict:
 
     cleaned = clean_text(description)
 
+    # Edge case: check for valid text after cleaning (not just numbers/symbols)
+    if len(cleaned) < 2:
+        return {
+            "success": False,
+            "error": "Input too short or contains only special characters. Please provide a valid description.",
+        }
+
     # Vectorize and predict
     vec = _vectorizer.transform([cleaned])
     risk_level = _model.predict(vec)[0]          # Critical / Urgent / Low

@@ -408,35 +408,82 @@ def schedule_release(amb_id: str, risk: str, eta_minutes: int,
                 except Exception as e:
                     print(f"[QUEUE] Callback error: {e}")
 
+    def _sync_progress():
+        """Synchronous version for when event loop is not running."""
+        import time
+        # Phase 1: Wait 1 min, then pickup
+        time.sleep(PICKUP_DELAY)
+        update_ambulance_status(amb_id, "patient_picked", case_id)
+        print(f"[AMB] {amb_id} - Patient picked up (auto-progress)")
+        if hospital_id:
+            from backend.hospital import notify_hospital, get_hospital_list
+            hospital_name = hospital_id
+            for h in get_hospital_list():
+                if h["id"] == hospital_id:
+                    hospital_name = h["name"]
+                    break
+            notify_hospital(hospital_id, case_id or "unknown", "Patient", 1,
+                          "Patient picked up", risk)
+            print(f"[HOSPITAL] {hospital_name} notified - patient picked up")
+
+        # Phase 2: Wait 1 more min, then deliver
+        time.sleep(ARRIVAL_DELAY)
+        update_ambulance_status(amb_id, "delivered", case_id)
+        print(f"[AMB] {amb_id} - Patient delivered (auto-progress)")
+
+        # Release ambulance and hospital resources
+        mark_ambulance_available(amb_id)
+        print(f"[AMB] {amb_id} available (after auto-progress)")
+        if hospital_id:
+            import backend.hospital as hos_mod
+            hos_mod.release_bed(hospital_id)
+            hos_mod.remove_incoming_patient(hospital_id, case_id)
+            print(f"[HOSPITAL] Bed released at {hospital_id}")
+
+        # Broadcast delivered event
+        from backend.decision import _broadcast_fn
+        if _broadcast_fn:
+            try:
+                import asyncio
+                asyncio.create_task(_broadcast_fn({
+                    "type": "patient_delivered",
+                    "data": {
+                        "case_id": case_id,
+                        "ambulance": amb_id,
+                        "message": f"Patient delivered to hospital. {amb_id} is now available."
+                    }
+                }))
+            except:
+                pass
+
+        # Auto-assign to next waiting case
+        next_case = _dequeue()
+        if next_case:
+            print(f"[QUEUE] Auto-assigning {amb_id} to queued case "
+                  f"{next_case['case_id']} ({next_case['risk']})")
+            if on_release_callback:
+                try:
+                    # Run callback in a new event loop if needed
+                    import asyncio
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            asyncio.create_task(on_release_callback(amb_id, next_case))
+                    except RuntimeError:
+                        pass
+                except Exception as e:
+                    print(f"[QUEUE] Callback error: {e}")
+
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
             asyncio.create_task(_auto_progress())
         else:
-            import threading, time
-            def _thread():
-                # Phase 1: Wait 1 min, then pickup
-                time.sleep(PICKUP_DELAY)
-                update_ambulance_status(amb_id, "patient_picked", case_id)
-                print(f"[AMB] {amb_id} - Patient picked up (auto-progress)")
-                if hospital_id:
-                    from backend.hospital import notify_hospital
-                    notify_hospital(hospital_id, case_id or "unknown", "Patient", 1,
-                                  "Patient picked up", risk)
-
-                # Phase 2: Wait 1 more min, then deliver
-                time.sleep(ARRIVAL_DELAY)
-                update_ambulance_status(amb_id, "delivered", case_id)
-                print(f"[AMB] {amb_id} - Patient delivered (auto-progress)")
-                mark_ambulance_available(amb_id)
-                if hospital_id:
-                    import backend.hospital as hos_mod
-                    hos_mod.release_bed(hospital_id)
-                    hos_mod.remove_incoming_patient(hospital_id, case_id)
-
-            threading.Thread(target=_thread, daemon=True).start()
+            import threading
+            threading.Thread(target=_sync_progress, daemon=True).start()
     except RuntimeError:
-        pass
+        import threading
+        threading.Thread(target=_sync_progress, daemon=True).start()
 
 
 # ─── Fleet status ─────────────────────────────────────────────────────

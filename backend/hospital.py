@@ -2,6 +2,9 @@ from typing import Optional
 from datetime import datetime
 from backend.ambulance import haversine
 
+# Total ICU beds per hospital (used for capacity calculations)
+TOTAL_ICU_BEDS = 20
+
 HOSPITALS = [
     {
         "id": "H-001",
@@ -111,9 +114,8 @@ def occupy_bed(hospital_id: str) -> bool:
     for h in HOSPITALS:
         if h["id"] == hospital_id and h["icu_beds"] > 0:
             h["icu_beds"] -= 1
-            # Update capacity percentage (assuming 20 total beds max per hospital for calculation)
-            total_beds = 20
-            h["capacity_pct"] = min(100, int(((total_beds - h["icu_beds"]) / total_beds) * 100))
+            # Update capacity percentage based on total ICU beds
+            h["capacity_pct"] = min(100, int(((TOTAL_ICU_BEDS - h["icu_beds"]) / TOTAL_ICU_BEDS) * 100))
             return True
     return False
 
@@ -121,10 +123,9 @@ def occupy_bed(hospital_id: str) -> bool:
 def release_bed(hospital_id: str) -> bool:
     """Increment ICU bed count when a patient is discharged."""
     for h in HOSPITALS:
-        if h["id"] == hospital_id and h["icu_beds"] < 20:
+        if h["id"] == hospital_id and h["icu_beds"] < TOTAL_ICU_BEDS:
             h["icu_beds"] += 1
-            total_beds = 20
-            h["capacity_pct"] = min(100, int(((total_beds - h["icu_beds"]) / total_beds) * 100))
+            h["capacity_pct"] = min(100, int(((TOTAL_ICU_BEDS - h["icu_beds"]) / TOTAL_ICU_BEDS) * 100))
             return True
     return False
 
@@ -156,8 +157,7 @@ def add_icu_beds(hospital_id: str, beds: int = 1) -> bool:
         if h["id"] == hospital_id:
             h["icu_beds"] = min(h["icu_beds"] + beds, 50)
             # Recalculate capacity
-            total_beds = 20
-            h["capacity_pct"] = min(100, int(((total_beds - h["icu_beds"]) / total_beds) * 100))
+            h["capacity_pct"] = min(100, int(((TOTAL_ICU_BEDS - h["icu_beds"]) / TOTAL_ICU_BEDS) * 100))
             return True
     return False
 
@@ -168,8 +168,7 @@ def remove_icu_beds(hospital_id: str, beds: int = 1) -> bool:
         if h["id"] == hospital_id:
             h["icu_beds"] = max(0, h["icu_beds"] - beds)
             # Recalculate capacity
-            total_beds = 20
-            h["capacity_pct"] = min(100, int(((total_beds - h["icu_beds"]) / total_beds) * 100))
+            h["capacity_pct"] = min(100, int(((TOTAL_ICU_BEDS - h["icu_beds"]) / TOTAL_ICU_BEDS) * 100))
             return True
     return False
 
@@ -192,6 +191,7 @@ def get_hospital_status(hospital_id: str) -> Optional[dict]:
                 "capacity_pct": h["capacity_pct"],
                 "icu_beds": h["icu_beds"],
                 "available_beds": get_available_beds(hospital_id),
+                "total_beds": TOTAL_ICU_BEDS,
             }
     return None
 
