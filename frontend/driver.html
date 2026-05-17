@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AERS - Driver Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root {
             --red: #DC2626;
@@ -85,6 +87,41 @@
         @keyframes slideIn {
             from { transform: translateX(100%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
+        }
+
+        .driver-map {
+            height: 280px;
+            background: var(--bg);
+            border-radius: 8px;
+            margin-top: 1rem;
+            position: relative;
+            overflow: hidden;
+            border: 2px solid var(--blue);
+        }
+
+        #driver-map {
+            height: 100%;
+            width: 100%;
+            border-radius: 6px;
+        }
+
+        .map-legend {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            font-size: 11px;
+        }
+
+        .map-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
         }
     </style>
 </head>
@@ -168,6 +205,21 @@
                 <p style="font-size: 0.875rem; margin-top: 0.25rem;" id="hospital-contact">--</p>
             </div>
 
+            <div class="driver-map" id="driver-map-container">
+                <div id="driver-map"></div>
+                <div class="map-legend">
+                    <div class="map-legend-item">
+                        <span style="color: #D97706;">📍</span> Patient
+                    </div>
+                    <div class="map-legend-item">
+                        <span style="color: #1D4ED8;">🚑</span> You
+                    </div>
+                    <div class="map-legend-item">
+                        <span style="color: #16A34A;">🏥</span> Hospital
+                    </div>
+                </div>
+            </div>
+
             <div class="info-item" style="margin-top: 1rem;">
                 <div class="info-label">Emergency Description</div>
                 <div id="case-description">--</div>
@@ -203,10 +255,117 @@
     </div>
 
     <script>
-        const API = '';
+        const API = window.location.origin;
         let ws = null;
         let currentAmbId = null;
         let currentCaseId = null;
+
+        // Driver Map
+        let driverMap = null;
+        let driverMarker = null;
+        let patientMarker = null;
+        let hospitalMarker = null;
+        let routeLine = null;
+
+        const driverIcon = L.divIcon({
+          className: 'driver-marker',
+          html: '<div style="background:#1D4ED8;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:3px solid white;">🚑</div>',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+
+        const patientIcon = L.divIcon({
+          className: 'patient-marker',
+          html: '<div style="background:#D97706;color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:3px solid white;">📍</div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        const hospIcon = L.divIcon({
+          className: 'hosp-marker',
+          html: '<div style="background:#16A34A;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:3px solid white;">🏥</div>',
+          iconSize: [32, 32],
+          iconAnchor: [16, 32]
+        });
+
+        function initDriverMap(lat, lng) {
+            if (driverMap) {
+                driverMap.setView([lat, lng], 14);
+                return;
+            }
+            driverMap = L.map('driver-map').setView([lat, lng], 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap'
+            }).addTo(driverMap);
+        }
+
+        function updateDriverMap(driverLat, driverLng, patientLat, patientLng, hospLat, hospLng, hospName) {
+            if (!driverMap) {
+                initDriverMap(patientLat, patientLng);
+            }
+
+            // Driver/Ambulance marker
+            if (driverLat && driverLng) {
+                if (!driverMarker) {
+                    driverMarker = L.marker([driverLat, driverLng], { icon: driverIcon })
+                        .addTo(driverMap)
+                        .bindPopup('<b>Your Location</b><br>Ambulance');
+                } else {
+                    driverMarker.setLatLng([driverLat, driverLng]);
+                }
+            }
+
+            // Patient marker
+            if (patientLat && patientLng) {
+                if (!patientMarker) {
+                    patientMarker = L.marker([patientLat, patientLng], { icon: patientIcon })
+                        .addTo(driverMap)
+                        .bindPopup('<b>Patient Location</b><br>Pick up here');
+                } else {
+                    patientMarker.setLatLng([patientLat, patientLng]);
+                }
+            }
+
+            // Hospital marker
+            if (hospLat && hospLng) {
+                if (!hospitalMarker) {
+                    hospitalMarker = L.marker([hospLat, hospLng], { icon: hospIcon })
+                        .addTo(driverMap)
+                        .bindPopup(`<b>${hospName}</b><br>Destination`);
+                } else {
+                    hospitalMarker.setLatLng([hospLat, hospLng]);
+                    hospitalMarker.setPopupContent(`<b>${hospName}</b><br>Destination`);
+                }
+
+                // Draw route from patient to hospital
+                if (routeLine) {
+                    driverMap.removeLayer(routeLine);
+                }
+                routeLine = L.polyline([
+                    [patientLat, patientLng],
+                    [hospLat, hospLng]
+                ], { color: '#1D4ED8', weight: 4, dashArray: '10, 10' }).addTo(driverMap);
+            }
+
+            // Fit bounds
+            const bounds = L.latLngBounds([
+                [patientLat, patientLng],
+                ...(driverLat && driverLng ? [[driverLat, driverLng]] : []),
+                ...(hospLat && hospLng ? [[hospLat, hospLng]] : [])
+            ]);
+            driverMap.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        function clearDriverMap() {
+            if (driverMap) {
+                driverMap.remove();
+                driverMap = null;
+                driverMarker = null;
+                patientMarker = null;
+                hospitalMarker = null;
+                routeLine = null;
+            }
+        }
 
         // Connect to WebSocket for real-time notifications
         function connectWebSocket() {
@@ -322,17 +481,29 @@
                 document.getElementById('notif-risk').textContent = fullCase.risk_level;
 
                 // Patient info
+                const patientLat = incident.lat || 14.4673;
+                const patientLng = incident.lng || 75.9238;
                 document.getElementById('patient-name').textContent = caller.name || '--';
                 document.getElementById('patient-phone').textContent = caller.phone || '--';
                 document.getElementById('patient-eta').textContent = (fullCase.ambulance_eta || '--') + ' min';
                 document.getElementById('patient-risk').textContent = fullCase.risk_level || '--';
-                document.getElementById('patient-location').textContent = `Lat: ${incident.lat}, Lng: ${incident.lng}`;
+                document.getElementById('patient-location').textContent = `Lat: ${patientLat.toFixed(4)}, Lng: ${patientLng.toFixed(4)}`;
                 document.getElementById('case-description').textContent = incident.description || '--';
 
                 // Hospital info
-                document.getElementById('hospital-name').textContent = hospital.name || '--';
+                const hospLat = hospital.lat;
+                const hospLng = hospital.lng;
+                const hospName = hospital.name || '--';
+                document.getElementById('hospital-name').textContent = hospName;
                 document.getElementById('hospital-address').textContent = hospital.address || '--';
                 document.getElementById('hospital-contact').textContent = hospital.contact || '--';
+
+                // Get ambulance position
+                const ambLat = amb.lat;
+                const ambLng = amb.lng;
+
+                // Update driver map
+                updateDriverMap(ambLat, ambLng, patientLat, patientLng, hospLat, hospLng, hospName);
 
                 updateStatusBadge('dispatched');
                 updatePhaseIndicator('dispatched');
@@ -355,6 +526,7 @@
             document.getElementById('case-card').style.display = 'none';
             document.getElementById('success-card').style.display = 'none';
             currentCaseId = null;
+            clearDriverMap();
         }
 
         function showDelivered() {
@@ -363,6 +535,7 @@
             document.getElementById('case-card').style.display = 'none';
             document.getElementById('success-card').style.display = 'block';
             currentCaseId = null;
+            clearDriverMap();
         }
 
         function updateStatusBadge(status) {

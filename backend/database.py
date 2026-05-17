@@ -160,69 +160,82 @@ def get_analytics() -> dict:
     with get_conn() as conn:
         total = conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0]
 
-        by_risk = {
-            row["risk_level"]: row["cnt"]
-            for row in conn.execute(
-                "SELECT risk_level, COUNT(*) as cnt FROM cases GROUP BY risk_level"
-            ).fetchall()
-        }
+        by_risk = {}
+        if total > 0:
+            by_risk = {
+                row["risk_level"]: row["cnt"]
+                for row in conn.execute(
+                    "SELECT risk_level, COUNT(*) as cnt FROM cases GROUP BY risk_level"
+                ).fetchall()
+            }
 
-        avg_eta = conn.execute(
-            "SELECT AVG(ambulance_eta) FROM cases WHERE ambulance_eta IS NOT NULL"
-        ).fetchone()[0]
+        avg_eta = None
+        avg_conf = None
+        if total > 0:
+            avg_eta = conn.execute(
+                "SELECT AVG(ambulance_eta) FROM cases WHERE ambulance_eta IS NOT NULL"
+            ).fetchone()[0]
 
-        avg_conf = conn.execute(
-            "SELECT AVG(confidence) FROM cases WHERE confidence IS NOT NULL"
-        ).fetchone()[0]
+            avg_conf = conn.execute(
+                "SELECT AVG(confidence) FROM cases WHERE confidence IS NOT NULL"
+            ).fetchone()[0]
 
-        top_hospitals = [
-            dict(r) for r in conn.execute(
-                """SELECT hospital_name, COUNT(*) as cnt
-                   FROM cases WHERE hospital_name IS NOT NULL
-                   GROUP BY hospital_name ORDER BY cnt DESC LIMIT 5"""
-            ).fetchall()
-        ]
+        top_hospitals = []
+        top_specialties = []
+        hourly = []
+        daily = []
 
-        top_specialties = [
-            dict(r) for r in conn.execute(
-                """SELECT specialty, COUNT(*) as cnt
-                   FROM cases WHERE specialty IS NOT NULL
-                   GROUP BY specialty ORDER BY cnt DESC"""
-            ).fetchall()
-        ]
+        if total > 0:
+            top_hospitals = [
+                dict(r) for r in conn.execute(
+                    """SELECT hospital_name, COUNT(*) as cnt
+                       FROM cases WHERE hospital_name IS NOT NULL
+                       GROUP BY hospital_name ORDER BY cnt DESC LIMIT 5"""
+                ).fetchall()
+            ]
 
-        # Cases per hour (last 24 hours)
-        hourly = [
-            dict(r) for r in conn.execute(
-                """SELECT strftime('%H:00', timestamp) as hour, COUNT(*) as cnt
+            top_specialties = [
+                dict(r) for r in conn.execute(
+                    """SELECT specialty, COUNT(*) as cnt
+                       FROM cases WHERE specialty IS NOT NULL
+                       GROUP BY specialty ORDER BY cnt DESC"""
+                ).fetchall()
+            ]
+
+            # Cases per hour (last 24 hours)
+            hourly = [
+                dict(r) for r in conn.execute(
+                    """SELECT strftime('%H:00', timestamp) as hour, COUNT(*) as cnt
+                       FROM cases
+                       WHERE timestamp >= datetime('now','-24 hours')
+                       GROUP BY hour ORDER BY hour"""
+                ).fetchall()
+            ]
+
+            # Daily totals last 7 days (with risk breakdown for stacked chart)
+            daily_raw = conn.execute(
+                """SELECT strftime('%Y-%m-%d', timestamp) as day, risk_level, COUNT(*) as cnt
                    FROM cases
-                   WHERE timestamp >= datetime('now','-24 hours')
-                   GROUP BY hour ORDER BY hour"""
-            ).fetchall()
-        ]
+                   WHERE timestamp >= datetime('now','-7 days')
+                   GROUP BY day, risk_level
+                   ORDER BY day""").fetchall()
 
-        # Daily totals last 7 days (with risk breakdown for stacked chart)
-        daily_raw = conn.execute(
-            """SELECT strftime('%Y-%m-%d', timestamp) as day, risk_level, COUNT(*) as cnt
-               FROM cases
-               WHERE timestamp >= datetime('now','-7 days')
-               GROUP BY day, risk_level
-               ORDER BY day""").fetchall()
-
-        # Group by day and pivot risk levels into separate columns
-        by_day = {}
-        for r in daily_raw:
-            d = r["day"]
-            if d not in by_day:
-                by_day[d] = {"day": d, "Critical": 0, "Urgent": 0, "Low": 0}
-            by_day[d][r["risk_level"]] = r["cnt"]
-        daily = list(by_day.values())
+            # Group by day and pivot risk levels into separate columns
+            by_day = {}
+            for r in daily_raw:
+                d = r["day"]
+                if d not in by_day:
+                    by_day[d] = {"day": d, "Critical": 0, "Urgent": 0, "Low": 0}
+                by_day[d][r["risk_level"]] = r["cnt"]
+            daily = list(by_day.values())
 
         # Sim accuracy
         sim_total = conn.execute("SELECT COUNT(*) FROM sim_runs WHERE status='success'").fetchone()[0]
-        sim_correct = conn.execute(
-            "SELECT COUNT(*) FROM sim_runs WHERE expected_risk=actual_risk AND status='success'"
-        ).fetchone()[0]
+        sim_correct = 0
+        if sim_total > 0:
+            sim_correct = conn.execute(
+                "SELECT COUNT(*) FROM sim_runs WHERE expected_risk=actual_risk AND status='success'"
+            ).fetchone()[0]
 
     return {
         "total_cases": total,
@@ -230,14 +243,14 @@ def get_analytics() -> dict:
         "critical": by_risk.get("Critical", 0),
         "urgent": by_risk.get("Urgent", 0),
         "low": by_risk.get("Low", 0),
-        "avg_eta_minutes": round(avg_eta, 1) if avg_eta else None,
-        "avg_confidence": round(avg_conf, 1) if avg_conf else None,
+        "avg_eta_minutes": round(avg_eta, 1) if avg_eta and avg_eta > 0 else None,
+        "avg_confidence": round(avg_conf, 1) if avg_conf and avg_conf > 0 else None,
         "top_hospitals": top_hospitals,
         "top_specialties": top_specialties,
         "hourly_last_24h": hourly,
         "daily_last_7d": daily,
         "sim_total": sim_total,
-        "sim_accuracy": round((sim_correct / sim_total * 100), 1) if sim_total > 0 else None,
+        "sim_accuracy": round((sim_correct / sim_total * 100), 1) if sim_total and sim_total > 0 else None,
     }
 
 
@@ -292,3 +305,26 @@ def get_case_delivery_status(case_id: str) -> str:
             "SELECT delivery_status FROM cases WHERE case_id = ?", (case_id,)
         ).fetchone()
         return row["delivery_status"] if row else None
+
+
+def get_cases_by_phone(phone: str) -> list:
+    """Get all cases for a phone number."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM cases WHERE caller_phone = ? ORDER BY id DESC", (phone,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_case_priority(case_id: str, priority: str) -> bool:
+    """Update case priority (admin override)."""
+    valid_priorities = ["Critical", "Urgent", "Low"]
+    if priority not in valid_priorities:
+        return False
+    with get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE cases SET risk_level = ? WHERE case_id = ?",
+            (priority, case_id)
+        )
+        return cursor.rowcount > 0

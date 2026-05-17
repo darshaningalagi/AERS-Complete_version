@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AERS — Live Tracking Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+<style>
+  :root {
+    --red: #DC2626; --amber: #D97706; --green: #16A34A; --blue: #1D4ED8;
+    --gray: #374151; --gray-light: #F9FAFB; --border: #E5E7EB; --text: #111827;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #F3F4F6; color: var(--text); }
+
+  .header {
+    background: #1E293B; color: white; padding: 0 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 56px; position: sticky; top: 0; z-index: 100;
+    border-bottom: 2px solid var(--red);
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon {
+    width: 32px; height: 32px; background: var(--red); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+  }
+  .logo-title { font-size: 15px; font-weight: 700; letter-spacing: .5px; }
+  .header-right { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+  .refresh-btn {
+    padding: 6px 14px; background: var(--blue); color: white; border: none;
+    border-radius: 6px; cursor: pointer; font-weight: 500; transition: background .15s;
+  }
+  .refresh-btn:hover { background: #1E40AF; }
+  .auto-refresh {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; background: rgba(255,255,255,0.1); border-radius: 6px;
+  }
+  .auto-refresh label { font-size: 12px; cursor: pointer; }
+  .auto-refresh input { cursor: pointer; }
+
+  .layout { display: grid; grid-template-columns: 350px 1fr; gap: 0; height: calc(100vh - 56px); }
+  .sidebar {
+    background: white; border-right: 1px solid var(--border); overflow-y: auto;
+    padding: 16px;
+  }
+  .sidebar h2 { font-size: 12px; color: #6B7280; letter-spacing: .8px; text-transform: uppercase; margin-bottom: 12px; }
+
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .legend-dot.hospital { background: var(--red); }
+  .legend-dot.ambulance { background: var(--blue); }
+  .legend-dot.patient { background: var(--amber); }
+  .legend-dot.destination { background: var(--green); }
+
+  .entity-card {
+    background: var(--gray-light); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; margin-bottom: 10px; cursor: pointer; transition: all .15s;
+  }
+  .entity-card:hover { border-color: var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .entity-card.active { border-color: var(--blue); background: #EFF6FF; }
+  .entity-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .entity-id { font-weight: 600; font-size: 13px; }
+  .entity-status { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+  .entity-status.available { background: #DCFCE7; color: #166534; }
+  .entity-status.busy { background: #FEE2E2; color: #991B1B; }
+  .entity-status.dispatched { background: #FEF3C7; color: #92400E; }
+  .entity-status.enroute { background: #DBEAFE; color: #1E40AF; }
+  .entity-details { font-size: 11px; color: #6B7280; line-height: 1.5; }
+
+  .map-container { position: relative; height: 100%; min-height: 500px; }
+  #map { height: 100%; min-height: 500px; width: 100%; }
+
+  .info-panel {
+    position: absolute; bottom: 20px; right: 20px; z-index: 1000;
+    background: white; padding: 14px 18px; border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 220px;
+  }
+  .info-panel h3 { font-size: 12px; color: #6B7280; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .5px; }
+  .info-stat { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+  .info-stat span:last-child { font-weight: 600; }
+  .info-stat .stat-good { color: var(--green); }
+  .info-stat .stat-busy { color: var(--amber); }
+  .info-stat .stat-critical { color: var(--red); }
+
+  .progress-bar-mini {
+    height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 4px;
+  }
+  .progress-bar-mini .fill { height: 100%; border-radius: 3px; transition: width .3s; }
+
+  .route-info {
+    position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: white; padding: 10px 20px; border-radius: 30px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: none;
+    font-size: 13px; font-weight: 500;
+  }
+  .route-info.show { display: block; }
+  .route-info .badge { background: var(--blue); color: white; padding: 2px 8px; border-radius: 10px; margin-left: 8px; }
+
+  .movement-stats {
+    position: absolute; top: 70px; left: 20px; z-index: 1000;
+    background: white; padding: 12px 16px; border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px;
+    font-size: 12px;
+  }
+  .movement-stats h4 { margin: 0 0 8px; font-size: 11px; color: #6B7280; text-transform: uppercase; }
+  .movement-stats .stat-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .movement-stats .speed { color: var(--blue); font-weight: 600; }
+
+  .control-panel {
+    position: absolute; top: 20px; right: 20px; z-index: 1000;
+    background: white; padding: 10px 14px; border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .control-panel label { font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .control-panel input[type="checkbox"] { cursor: pointer; }
+
+  .nav-tabs { border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .nav-tabs .nav-link { border: none; padding: 8px 12px; font-size: 12px; color: var(--muted); }
+  .nav-tabs .nav-link.active { color: var(--blue); border-bottom: 2px solid var(--blue); }
+
+  @media (max-width: 768px) {
+    .layout { grid-template-columns: 1fr; grid-template-rows: 1fr 250px; }
+    .sidebar { border-right: none; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">🚑</div>
+    <div>
+      <div class="logo-title">AERS Live Tracking</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="auto-refresh">
+      <input type="checkbox" id="autoRefresh" checked>
+      <label for="autoRefresh">Auto-refresh</label>
+    </div>
+    <span id="lastUpdate">Last: --</span>
+    <button class="refresh-btn" onclick="refreshData()">
+      <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+    <a href="/" class="btn btn-sm btn-outline-light" style="text-decoration: none; font-size: 12px;">
+      <i class="bi bi-house"></i> Dashboard
+    </a>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <ul class="nav nav-tabs" id="sidebarTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="hospitals-tab" data-bs-toggle="tab" data-bs-target="#hospitals-panel" type="button">Hospitals</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="ambulances-tab" data-bs-toggle="tab" data-bs-target="#ambulances-panel" type="button">Ambulances</button>
+      </li>
+    </ul>
+
+    <div class="tab-content" id="sidebarTabContent">
+      <div class="tab-pane fade show active" id="hospitals-panel">
+        <div class="legend-item"><div class="legend-dot hospital"></div> Hospital</div>
+        <div id="hospitalList" style="margin-top: 12px;"></div>
+      </div>
+      <div class="tab-pane fade" id="ambulances-panel">
+        <div class="legend-item"><div class="legend-dot ambulance"></div> Ambulance</div>
+        <div class="legend-item"><div class="legend-dot patient"></div> Patient Pickup</div>
+        <div class="legend-item"><div class="legend-dot destination"></div> Destination</div>
+        <div id="ambulanceList" style="margin-top: 12px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="map-container">
+    <div id="map"></div>
+    <div class="route-info" id="routeInfo">
+      <i class="bi bi-sign-turn-right"></i> Active Routes <span class="badge" id="activeRouteCount">0</span>
+    </div>
+    <div class="movement-stats" id="movementStats" style="display: none;">
+      <h4><i class="bi bi-sign-turn-right"></i> Movement</h4>
+      <div class="stat-row">
+        <span>Phase:</span>
+        <span id="movePhase">--</span>
+      </div>
+      <div class="stat-row">
+        <span>Progress:</span>
+        <span id="moveProgress">--</span>
+      </div>
+      <div class="stat-row">
+        <span>ETA:</span>
+        <span id="moveEta">--</span>
+      </div>
+    </div>
+    <div class="control-panel">
+      <label>
+        <input type="checkbox" id="showTrails" checked>
+        Show Movement Trails
+      </label>
+      <label>
+        <input type="checkbox" id="animateMove" checked>
+        Animate Movement
+      </label>
+    </div>
+    <div class="info-panel">
+      <h3><i class="bi bi-speedometer2"></i> System Status</h3>
+      <div class="info-stat">
+        <span>Total Ambulances:</span>
+        <span id="totalAmbs">0</span>
+      </div>
+      <div class="info-stat">
+        <span>Available:</span>
+        <span id="availAmbs" class="stat-good">0</span>
+      </div>
+      <div class="info-stat">
+        <span>En Route:</span>
+        <span id="activeAmbs" class="stat-busy">0</span>
+      </div>
+      <div class="info-stat">
+        <span>Hospitals:</span>
+        <span id="totalHosps">0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Map setup
+const map = L.map('map').setView([14.4673, 75.9238], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+const hospitalMarkers = {};
+const ambulanceMarkers = {};
+const patientMarkers = {};
+const destinationMarkers = {};
+const routeLines = {};
+
+const hospIcon = L.divIcon({
+  className: 'hosp-marker',
+  html: '<div style="background:#DC2626;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 6px rgba(0,0,0,0.3);">🏥</div>',
+  iconSize: [32, 32],
+  iconAnchor: [16, 32]
+});
+
+const ambIcon = L.divIcon({
+  className: 'amb-marker',
+  html: '<div style="background:#1D4ED8;color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid white;">🚑</div>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14]
+});
+
+const patientIcon = L.divIcon({
+  className: 'patient-marker',
+  html: '<div style="background:#D97706;color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,0.3);">🧑</div>',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12]
+});
+
+const destIcon = L.divIcon({
+  className: 'dest-marker',
+  html: '<div style="background:#16A34A;color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.3);border:2px solid white;">🏨</div>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14]
+});
+
+let selectedEntity = null;
+let autoRefreshEnabled = true;
+let lastAmbulancePositions = {};
+
+// Movement tracking
+const ambulanceTrails = {};  // Store position history for each ambulance
+const animationFrames = {}; // Store animation frame IDs
+const MAX_TRAIL_POINTS = 50; // Maximum points in trail
+
+// Update movement stats panel
+function updateMovementStats(phase, progress, eta) {
+    const panel = document.getElementById('movementStats');
+    if (phase && phase !== 'available') {
+        panel.style.display = 'block';
+        document.getElementById('movePhase').textContent = phase.replace('_', ' ');
+        document.getElementById('moveProgress').textContent = progress + '%';
+        document.getElementById('moveEta').textContent = eta > 0 ? `${Math.ceil(eta/60)} min` : '--';
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+// Draw movement trail
+function updateTrail(key, newLat, newLng) {
+    if (!document.getElementById('showTrails').checked) return;
+
+    if (!ambulanceTrails[key]) {
+        ambulanceTrails[key] = [];
+    }
+
+    const trail = ambulanceTrails[key];
+    const lastPos = trail[trail.length - 1];
+
+    // Only add new point if it's different enough
+    if (!lastPos || Math.abs(newLat - lastPos[0]) > 0.0001 || Math.abs(newLng - lastPos[1]) > 0.0001) {
+        trail.push([newLat, newLng]);
+        // Keep trail at max points
+        if (trail.length > MAX_TRAIL_POINTS) {
+            trail.shift();
+        }
+    }
+
+    return trail;
+}
+
+// Animate ambulance marker smoothly
+function animateAmbulance(marker, fromLat, fromLng, toLat, toLng, duration = 1000) {
+    if (!document.getElementById('animateMove').checked) {
+        marker.setLatLng([toLat, toLng]);
+        return;
+    }
+
+    const startTime = performance.now();
+    const steps = 30;
+    let step = 0;
+
+    function animate(currentTime) {
+        step++;
+        const progress = step / steps;
+        const easeProgress = 1 - Math.pow(1 - progress, 3); // Ease out cubic
+
+        const currentLat = fromLat + (toLat - fromLat) * easeProgress;
+        const currentLng = fromLng + (toLng - fromLng) * easeProgress;
+
+        marker.setLatLng([currentLat, currentLng]);
+
+        if (step < steps) {
+            animationFrames[marker._id] = requestAnimationFrame(animate);
+        }
+    }
+
+    // Cancel any existing animation for this marker
+    if (animationFrames[marker._id]) {
+        cancelAnimationFrame(animationFrames[marker._id]);
+    }
+    marker._id = marker._id || Math.random();
+    animationFrames[marker._id] = requestAnimationFrame(animate);
+}
+
+async function refreshData() {
+  try {
+    const [statusRes, hospRes] = await Promise.all([
+      fetch('/status'),
+      fetch('/hospitals')
+    ]);
+    const status = await statusRes.json();
+    const hospData = await hospRes.json();
+
+    // Update hospitals
+    hospData.hospitals.forEach(h => {
+      const popupContent = `
+        <div style="min-width:200px;">
+          <h4 style="margin:0 0 8px;color:#DC2626;">${h.name}</h4>
+          <p style="margin:4px 0;font-size:12px;">📍 ${h.address}</p>
+          <p style="margin:4px 0;font-size:12px;">📞 ${h.contact}</p>
+          <p style="margin:4px 0;font-size:12px;">
+            <strong>Specialties:</strong> ${h.specialties.join(', ')}
+          </p>
+          <div style="margin:8px 0;">
+            <small>ICU Capacity</small>
+            <div class="progress-bar-mini">
+              <div class="fill ${h.capacity_pct > 80 ? 'bg-danger' : h.capacity_pct > 50 ? 'bg-warning' : 'bg-success'}"
+                   style="width:${h.capacity_pct}%;background:${h.capacity_pct > 80 ? '#DC2626' : h.capacity_pct > 50 ? '#D97706' : '#16A34A'};">
+              </div>
+            </div>
+            <small style="float:right;">${h.icu_beds}/20 beds</small>
+          </div>
+        </div>
+      `;
+      if (!hospitalMarkers[h.id]) {
+        hospitalMarkers[h.id] = L.marker([h.lat, h.lng], { icon: hospIcon })
+          .addTo(map)
+          .bindPopup(popupContent);
+      } else {
+        hospitalMarkers[h.id].setLatLng([h.lat, h.lng]);
+        hospitalMarkers[h.id].setPopupContent(popupContent);
+      }
+    });
+
+    // Update ambulances
+    const fleet = status.fleet || [];
+    const available = fleet.filter(a => a.status === 'available').length;
+    const enroute = fleet.filter(a => a.status === 'dispatched' || a.current_phase === 'enroute').length;
+
+    document.getElementById('totalAmbs').textContent = fleet.length;
+    document.getElementById('availAmbs').textContent = available;
+    document.getElementById('availAmbs').className = available > 0 ? 'stat-good' : 'stat-critical';
+    document.getElementById('activeAmbs').textContent = enroute;
+    document.getElementById('activeAmbs').className = enroute > 0 ? 'stat-busy' : 'stat-good';
+    document.getElementById('totalHosps').textContent = hospData.hospitals.length;
+
+    // Update sidebar lists
+    updateHospitalList(hospData.hospitals);
+    updateAmbulanceList(fleet);
+
+    let activeRoutes = 0;
+
+    fleet.forEach(amb => {
+      const key = amb.id;
+      const movement = amb.movement || {};
+      const tracking = amb.tracking || {};
+
+      // Use movement simulation position if available
+      const lat = movement.current_lat || amb.lat;
+      const lng = movement.current_lng || amb.lng;
+      const phase = movement.phase || amb.current_phase;
+      const progress = movement.progress || 0;
+      const etaSec = movement.eta_seconds || 0;
+
+      // Update movement stats if this is selected
+      if (selectedEntity === key && phase !== 'available') {
+        updateMovementStats(phase, progress, etaSec);
+      }
+
+      // Update trail and get position history
+      const trail = updateTrail(key, lat, lng);
+
+      // Draw/update trail line
+      if (trail && trail.length > 1) {
+        if (!routeLines[key + '_trail']) {
+          routeLines[key + '_trail'] = L.polyline(trail, {
+            color: '#1D4ED8',
+            weight: 3,
+            opacity: 0.5,
+            smoothFactor: 1
+          }).addTo(map);
+        } else {
+          routeLines[key + '_trail'].setLatLngs(trail);
+        }
+      }
+
+      // Build popup content
+      let popupContent = `
+        <div style="min-width:180px;">
+          <h4 style="margin:0 0 8px;color:#1D4ED8;">${amb.id}</h4>
+          <p style="margin:4px 0;font-size:12px;">👤 ${amb.driver}</p>
+          <p style="margin:4px 0;font-size:12px;">📱 ${amb.phone}</p>
+          <p style="margin:4px 0;font-size:12px;">🚑 Type: ${amb.type}</p>
+          <p style="margin:4px 0;font-size:12px;">📍 ${amb.location}</p>
+          <p style="margin:4px 0;font-size:12px;">Status: <strong>${amb.status}</strong></p>
+      `;
+      if (phase !== 'available') {
+        popupContent += `
+          <hr style="margin:8px 0;">
+          <p style="margin:4px 0;font-size:12px;">Phase: <strong>${phase}</strong></p>
+          <p style="margin:4px 0;font-size:12px;">Progress: <strong>${progress}%</strong></p>
+        `;
+        if (etaSec > 0) {
+          popupContent += `<p style="margin:4px 0;font-size:12px;">ETA: <strong>${Math.ceil(etaSec/60)} min</strong></p>`;
+        }
+        if (tracking.case_id) {
+          popupContent += `<p style="margin:4px 0;font-size:12px;">Case: ${tracking.case_id}</p>`;
+        }
+      }
+      popupContent += '</div>';
+
+      if (!ambulanceMarkers[key]) {
+        ambulanceMarkers[key] = L.marker([lat, lng], { icon: ambIcon })
+          .addTo(map)
+          .bindPopup(popupContent);
+        // Click to select for movement stats
+        ambulanceMarkers[key].on('click', () => {
+          selectedEntity = key;
+          updateMovementStats(phase, progress, etaSec);
+          // Highlight selected
+          document.querySelectorAll('.entity-card').forEach(c => c.classList.remove('active'));
+        });
+      } else {
+        // Animate movement with smooth transition
+        const oldPos = lastAmbulancePositions[key];
+        if (oldPos) {
+          const distance = Math.sqrt(Math.pow(lat - oldPos.lat, 2) + Math.pow(lng - oldPos.lng, 2));
+          if (distance > 0.0001) {
+            animateAmbulance(ambulanceMarkers[key], oldPos.lat, oldPos.lng, lat, lng, 800);
+          }
+        }
+        lastAmbulancePositions[key] = { lat, lng };
+        ambulanceMarkers[key].setPopupContent(popupContent);
+      }
+
+      // Handle active cases - show patient and destination
+      const pKey = `${key}_patient`;
+      const dKey = `${key}_dest`;
+
+      if (tracking.case_id && tracking.patient_location_lat && tracking.patient_location_lng) {
+        activeRoutes++;
+
+        // Patient marker
+        if (!patientMarkers[pKey]) {
+          patientMarkers[pKey] = L.marker([tracking.patient_location_lat, tracking.patient_location_lng], { icon: patientIcon })
+            .addTo(map)
+            .bindPopup(`<b>📍 Patient Location</b><br>Case: ${tracking.case_id}<br>${tracking.patient_description || 'Emergency case'}`);
+        }
+
+        // Destination hospital marker
+        if (tracking.destination_hospital_lat && tracking.destination_hospital_lng) {
+          if (!destinationMarkers[dKey]) {
+            destinationMarkers[dKey] = L.marker([tracking.destination_hospital_lat, tracking.destination_hospital_lng], { icon: destIcon })
+              .addTo(map)
+              .bindPopup(`<b>🏨 Destination Hospital</b><br>${tracking.destination_hospital_name || 'Hospital'}`);
+          }
+
+          // Draw route
+          if (!routeLines[key]) {
+            routeLines[key] = L.polyline([
+              [tracking.patient_location_lat, tracking.patient_location_lng],
+              [tracking.destination_hospital_lat, tracking.destination_hospital_lng]
+            ], { color: '#1D4ED8', weight: 4, dashArray: '10, 10', opacity: 0.7 }).addTo(map);
+          } else {
+            routeLines[key].setLatLngs([
+              [tracking.patient_location_lat, tracking.patient_location_lng],
+              [tracking.destination_hospital_lat, tracking.destination_hospital_lng]
+            ]);
+          }
+        }
+      } else {
+        // Clean up markers if no active case
+        if (patientMarkers[pKey]) {
+          map.removeLayer(patientMarkers[pKey]);
+          delete patientMarkers[pKey];
+        }
+        if (destinationMarkers[dKey]) {
+          map.removeLayer(destinationMarkers[dKey]);
+          delete destinationMarkers[dKey];
+        }
+        if (routeLines[key]) {
+          map.removeLayer(routeLines[key]);
+          delete routeLines[key];
+        }
+      }
+    });
+
+    // Update route info badge
+    document.getElementById('routeInfo').classList.toggle('show', activeRoutes > 0);
+    document.getElementById('activeRouteCount').textContent = activeRoutes;
+
+    document.getElementById('lastUpdate').textContent = `Last: ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    console.error('Refresh error:', e);
+  }
+}
+
+function updateHospitalList(hospitals) {
+  const container = document.getElementById('hospitalList');
+  container.innerHTML = hospitals.map(h => `
+    <div class="entity-card" onclick="focusEntity('hospital', '${h.id}')">
+      <div class="entity-header">
+        <span class="entity-id">${h.id}</span>
+        <span class="entity-status busy">${h.capacity_pct}% full</span>
+      </div>
+      <div class="entity-details">
+        ${h.name}<br>
+        ICU: ${h.icu_beds}/20 | ${h.specialties.slice(0, 3).join(', ')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateAmbulanceList(ambulances) {
+  const container = document.getElementById('ambulanceList');
+  container.innerHTML = ambulances.map(a => {
+    const statusClass = a.status === 'available' ? 'available' :
+                       (a.status === 'dispatched' || a.current_phase === 'enroute' ? 'enroute' : 'busy');
+    const statusText = a.status === 'available' ? 'Available' :
+                      (a.status === 'dispatched' || a.current_phase === 'enroute' ? 'En Route' : 'Busy');
+    return `
+    <div class="entity-card" onclick="focusEntity('ambulance', '${a.id}')">
+      <div class="entity-header">
+        <span class="entity-id">${a.id}</span>
+        <span class="entity-status ${statusClass}">${statusText}</span>
+      </div>
+      <div class="entity-details">
+        ${a.driver} | ${a.type}<br>
+        ${a.location}<br>
+        ${a.tracking && a.tracking.case_id ? `Case: ${a.tracking.case_id}` : 'No active case'}
+      </div>
+    </div>
+  `}).join('');
+}
+
+function focusEntity(type, id) {
+  let marker;
+  if (type === 'hospital' && hospitalMarkers[id]) {
+    marker = hospitalMarkers[id];
+    selectedEntity = null;
+    document.getElementById('movementStats').style.display = 'none';
+  } else if (type === 'ambulance' && ambulanceMarkers[id]) {
+    marker = ambulanceMarkers[id];
+    selectedEntity = id;
+  }
+
+  if (marker) {
+    map.setView(marker.getLatLng(), 15);
+    marker.openPopup();
+  }
+}
+
+// Auto-refresh toggle
+document.getElementById('autoRefresh').addEventListener('change', (e) => {
+  autoRefreshEnabled = e.target.checked;
+});
+
+function startAutoRefresh() {
+  setInterval(() => {
+    if (autoRefreshEnabled) refreshData();
+  }, 3000);
+}
+
+function animateMarker(marker, newLat, newLng) {
+  const oldLatLng = marker.getLatLng();
+  const dLat = newLat - oldLatLng.lat;
+  const dLng = newLng - oldLatLng.lng;
+  const steps = 15;
+  let step = 0;
+
+  function animate() {
+    step++;
+    const ratio = step / steps;
+    const curLat = oldLatLng.lat + dLat * ratio;
+    const curLng = oldLatLng.lng + dLng * ratio;
+    marker.setLatLng([curLat, curLng]);
+    if (step < steps) {
+      requestAnimationFrame(animate);
+    }
+  }
+  animate();
+}
+
+refreshData();
+startAutoRefresh();
+
+// Add CSS for trail toggle and smooth animation
+const style = document.createElement('style');
+style.textContent = `
+  .leaflet-container { transition: all 0.3s ease; }
+  .amb-marker { transition: transform 0.5s ease; }
+`;
+document.head.appendChild(style);
+</script>
+</body>
+</html>

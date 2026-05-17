@@ -11,7 +11,7 @@ HOSPITALS = [
         "name": "City General Hospital",
         "lat": 14.4700, "lng": 75.9300,
         "specialties": ["trauma", "cardiac", "neuro", "general"],
-        "capacity_pct": 72, "icu_beds": 8,
+        "capacity_pct": 60, "icu_beds": 8,  # 60% occupied, 8 free beds
         "contact": "+91-8360001111",
         "address": "Main Road, Haveri",
     },
@@ -20,7 +20,7 @@ HOSPITALS = [
         "name": "Apollo Medical Center",
         "lat": 14.4850, "lng": 75.9400,
         "specialties": ["cardiac", "burns", "ortho", "general"],
-        "capacity_pct": 58, "icu_beds": 12,
+        "capacity_pct": 40, "icu_beds": 12,  # 40% occupied, 12 free beds
         "contact": "+91-8360002222",
         "address": "Hospital Road, Haveri",
     },
@@ -29,7 +29,7 @@ HOSPITALS = [
         "name": "St. Mary's Hospital",
         "lat": 14.4600, "lng": 75.9180,
         "specialties": ["pediatric", "maternity", "general"],
-        "capacity_pct": 88, "icu_beds": 3,
+        "capacity_pct": 85, "icu_beds": 3,  # 85% occupied, 3 free beds
         "contact": "+91-8360003333",
         "address": "Church Street, Haveri",
     },
@@ -38,9 +38,27 @@ HOSPITALS = [
         "name": "NIMHANS Trauma Center",
         "lat": 14.4750, "lng": 75.9450,
         "specialties": ["neuro", "trauma", "burns", "ortho"],
-        "capacity_pct": 61, "icu_beds": 15,
+        "capacity_pct": 25, "icu_beds": 15,  # 25% occupied, 15 free beds
         "contact": "+91-8360004444",
         "address": "Bypass Road, Haveri",
+    },
+    {
+        "id": "H-005",
+        "name": "LifeCare Hospital",
+        "lat": 14.4500, "lng": 75.9150,
+        "specialties": ["cardiac", "general", "ortho"],
+        "capacity_pct": 50, "icu_beds": 10,  # 50% occupied, 10 free beds
+        "contact": "+91-8360005555",
+        "address": "Gandhi Road, Haveri",
+    },
+    {
+        "id": "H-006",
+        "name": "Child Care Institute",
+        "lat": 14.4800, "lng": 75.9350,
+        "specialties": ["pediatric", "maternity", "neonatal"],
+        "capacity_pct": 70, "icu_beds": 6,  # 70% occupied, 6 free beds
+        "contact": "+91-8360006666",
+        "address": "Station Road, Haveri",
     },
 ]
 
@@ -109,23 +127,41 @@ def get_hospital_list() -> list:
     return HOSPITALS
 
 
-def occupy_bed(hospital_id: str) -> bool:
-    """Decrement ICU bed count when a patient is admitted."""
+def fill_bed(hospital_id: str) -> bool:
+    """Mark a bed as occupied when patient arrives (decreases available beds)."""
     for h in HOSPITALS:
         if h["id"] == hospital_id and h["icu_beds"] > 0:
             h["icu_beds"] -= 1
-            # Update capacity percentage based on total ICU beds
-            h["capacity_pct"] = min(100, int(((TOTAL_ICU_BEDS - h["icu_beds"]) / TOTAL_ICU_BEDS) * 100))
+            # Update capacity % (occupied / total * 100)
+            occupied = TOTAL_ICU_BEDS - h["icu_beds"]
+            h["capacity_pct"] = min(100, int((occupied / TOTAL_ICU_BEDS) * 100))
             return True
     return False
 
 
-def release_bed(hospital_id: str) -> bool:
-    """Increment ICU bed count when a patient is discharged."""
+def free_bed(hospital_id: str) -> bool:
+    """Mark a bed as available when patient is discharged."""
     for h in HOSPITALS:
         if h["id"] == hospital_id and h["icu_beds"] < TOTAL_ICU_BEDS:
             h["icu_beds"] += 1
-            h["capacity_pct"] = min(100, int(((TOTAL_ICU_BEDS - h["icu_beds"]) / TOTAL_ICU_BEDS) * 100))
+            # Update capacity %
+            occupied = TOTAL_ICU_BEDS - h["icu_beds"]
+            h["capacity_pct"] = min(100, int((occupied / TOTAL_ICU_BEDS) * 100))
+            return True
+    return False
+
+
+# Legacy aliases for backward compatibility
+occupy_bed = fill_bed
+release_bed = free_bed
+
+
+def recalculate_capacity(hospital_id: str) -> bool:
+    """Recalculate capacity % for a hospital based on current icu_beds."""
+    for h in HOSPITALS:
+        if h["id"] == hospital_id:
+            occupied = TOTAL_ICU_BEDS - h["icu_beds"]
+            h["capacity_pct"] = min(100, int((occupied / TOTAL_ICU_BEDS) * 100))
             return True
     return False
 
@@ -152,25 +188,75 @@ def update_hospital_info(hospital_id: str, icu_beds: int = None, capacity_pct: i
 
 
 def add_icu_beds(hospital_id: str, beds: int = 1) -> bool:
-    """Add ICU beds to hospital."""
+    """Add ICU beds to hospital (increases available beds, decreases occupancy %)."""
     for h in HOSPITALS:
         if h["id"] == hospital_id:
-            h["icu_beds"] = min(h["icu_beds"] + beds, 50)
-            # Recalculate capacity
-            h["capacity_pct"] = min(100, int(((TOTAL_ICU_BEDS - h["icu_beds"]) / TOTAL_ICU_BEDS) * 100))
+            h["icu_beds"] = min(h["icu_beds"] + beds, TOTAL_ICU_BEDS)
+            # Recalculate capacity % (beds used / total = occupied %)
+            occupied = TOTAL_ICU_BEDS - h["icu_beds"]
+            h["capacity_pct"] = min(100, int((occupied / TOTAL_ICU_BEDS) * 100))
             return True
     return False
 
 
 def remove_icu_beds(hospital_id: str, beds: int = 1) -> bool:
-    """Remove ICU beds from hospital."""
+    """Remove ICU beds from hospital (decreases available beds, increases occupancy %)."""
     for h in HOSPITALS:
         if h["id"] == hospital_id:
             h["icu_beds"] = max(0, h["icu_beds"] - beds)
-            # Recalculate capacity
-            h["capacity_pct"] = min(100, int(((TOTAL_ICU_BEDS - h["icu_beds"]) / TOTAL_ICU_BEDS) * 100))
+            # Recalculate capacity %
+            occupied = TOTAL_ICU_BEDS - h["icu_beds"]
+            h["capacity_pct"] = min(100, int((occupied / TOTAL_ICU_BEDS) * 100))
             return True
     return False
+
+
+# ─── Hospital CRUD ─────────────────────────────────────────────────────
+def add_hospital(hospital_data: dict) -> dict:
+    """Add a new hospital to the system. Returns the new hospital."""
+    # Generate ID if not provided
+    if "id" not in hospital_data:
+        max_id = 0
+        for h in HOSPITALS:
+            if h["id"].startswith("H-"):
+                try:
+                    num = int(h["id"].split("-")[1])
+                    max_id = max(max_id, num)
+                except:
+                    pass
+        hospital_data["id"] = f"H-{max_id + 1:03d}"
+
+    # Set defaults
+    hospital_data.setdefault("name", "New Hospital")
+    hospital_data.setdefault("lat", 14.4700)
+    hospital_data.setdefault("lng", 75.9300)
+    hospital_data.setdefault("specialties", ["general"])
+    hospital_data.setdefault("capacity_pct", 50)
+    hospital_data.setdefault("icu_beds", 10)
+    hospital_data.setdefault("contact", "+91-8360000000")
+    hospital_data.setdefault("address", "Address not set")
+
+    HOSPITALS.append(hospital_data)
+    return hospital_data
+
+
+def delete_hospital(hospital_id: str) -> bool:
+    """Remove a hospital from the system."""
+    global HOSPITALS
+    before = len(HOSPITALS)
+    HOSPITALS = [h for h in HOSPITALS if h["id"] != hospital_id]
+    return len(HOSPITALS) < before
+
+
+def update_hospital_details(hospital_id: str, updates: dict) -> Optional[dict]:
+    """Update hospital details."""
+    for h in HOSPITALS:
+        if h["id"] == hospital_id:
+            for key, value in updates.items():
+                if key != "id" and value is not None:
+                    h[key] = value
+            return h
+    return None
 
 
 # ─── Hospital Interface Functions ───────────────────────────────────────

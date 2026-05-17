@@ -13,7 +13,7 @@ import os
 from backend.predictor import predict_risk, MODEL_LOADED
 from backend.ambulance import (
     get_fleet_status, mark_ambulance_busy, mark_ambulance_available,
-    get_ambulance_by_id, update_ambulance_status
+    get_ambulance_by_id, update_ambulance_status, get_fleet_maintenance
 )
 from backend.hospital import (
     get_hospital_list, get_hospital_status, get_incoming_patients,
@@ -122,6 +122,13 @@ def serve_driver():
     p = os.path.join(frontend_path, "driver.html")
     return FileResponse(p) if os.path.exists(p) else {"msg": "Driver dashboard not found"}
 
+
+@app.get("/tracking")
+def serve_tracking():
+    """Serve live tracking map."""
+    p = os.path.join(frontend_path, "tracking.html")
+    return FileResponse(p) if os.path.exists(p) else {"msg": "Tracking page not found"}
+
 # ── System ─────────────────────────────────────────────────────────────
 @app.get("/test", tags=["System"])
 def health_check():
@@ -173,6 +180,50 @@ async def analyze_emergency(req: EmergencyRequest):
 def list_ambulances():
     return {"ambulances": get_fleet_status()}
 
+
+@app.get("/ambulances/maintenance", tags=["Fleet"])
+def list_ambulances_maintenance():
+    """Get fleet maintenance status."""
+    return {"fleet": get_fleet_maintenance()}
+
+
+@app.get("/ambulance/{amb_id}/maintenance", tags=["Fleet"])
+def get_ambulance_maintenance_detail(amb_id: str):
+    """Get maintenance details for a specific ambulance."""
+    from backend.ambulance import get_ambulance_maintenance
+    maint = get_ambulance_maintenance(amb_id)
+    if not maint:
+        raise HTTPException(404, f"Ambulance {amb_id} not found")
+    return maint
+
+
+class MaintenanceUpdate(BaseModel):
+    status: str = None
+    fuel_pct: int = None
+    notes: str = None
+
+
+@app.put("/ambulance/{amb_id}/maintenance", tags=["Fleet"])
+def update_ambulance_maintenance(amb_id: str, req: MaintenanceUpdate):
+    """Update ambulance maintenance status."""
+    from backend.ambulance import update_maintenance_status
+
+    result = update_maintenance_status(amb_id, req.status, req.fuel_pct, req.notes)
+    if not result:
+        raise HTTPException(404, f"Ambulance {amb_id} not found")
+    return {"message": f"Ambulance {amb_id} maintenance updated"}
+
+
+@app.post("/ambulance/{amb_id}/maintenance/complete", tags=["Fleet"])
+def complete_maintenance(amb_id: str):
+    """Mark maintenance as completed."""
+    from backend.ambulance import record_maintenance
+
+    result = record_maintenance(amb_id)
+    if not result:
+        raise HTTPException(404, f"Ambulance {amb_id} not found")
+    return {"message": f"Maintenance completed for {amb_id}"}
+
 @app.post("/ambulances/status", tags=["Fleet"])
 def set_ambulance_status(req: AmbulanceStatusRequest):
     if req.status=="available": ok = mark_ambulance_available(req.amb_id)
@@ -214,6 +265,50 @@ def cancel_from_queue(case_id: str):
 @app.get("/api/analytics", tags=["Analytics"])
 def analytics():
     return get_analytics()
+
+
+@app.get("/api/analytics/export", tags=["Analytics"])
+def export_analytics_csv():
+    """Export analytics data as CSV for reports."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    from backend.database import get_recent_cases
+
+    # Get cases
+    rows = get_recent_cases(1000)
+
+    # Create CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header
+    writer.writerow([
+        "Case ID", "Timestamp", "Risk Level", "Confidence",
+        "Description", "Ambulance", "Hospital", "Specialty", "Status"
+    ])
+
+    # Data rows
+    for r in rows:
+        writer.writerow([
+            r.get("case_id", ""),
+            r.get("timestamp", ""),
+            r.get("risk_level", ""),
+            r.get("confidence", ""),
+            r.get("description", "")[:100],
+            r.get("ambulance_id", ""),
+            r.get("hospital_name", ""),
+            r.get("specialty", ""),
+            r.get("delivery_status", "ongoing"),
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=aers_analytics.csv"}
+    )
 
 @app.get("/api/cases/recent", tags=["Analytics"])
 def recent_cases(limit: int = 100):
@@ -309,6 +404,16 @@ def patient_get_notification(case_id: str):
     if not notification:
         raise HTTPException(404, f"Case {case_id} not found")
     return notification
+
+
+@app.get("/patient/cases", tags=["Patient"])
+def get_cases_by_phone(phone: str):
+    """Get all cases for a phone number."""
+    from backend.database import get_cases_by_phone as db_get_cases_by_phone
+    cases = db_get_cases_by_phone(phone)
+    if not cases:
+        raise HTTPException(404, f"No cases found for phone {phone}")
+    return {"phone": phone, "cases": cases, "count": len(cases)}
 
 
 # ── Driver Interface ───────────────────────────────────────────────────
@@ -457,6 +562,63 @@ def get_ambulance_tracking_detail(amb_id: str):
     return tracking_info
 
 
+# ── Route Details Endpoint ───────────────────────────────────────────────
+@app.get("/tracking/routes", tags=["Tracking"])
+def get_all_routes():
+    """Get all active ambulance routes with details."""
+    from backend.ambulance import get_all_ambulances_status
+    from backend.hospital import get_hospital_list
+
+    fleet = get_all_ambulances_status()
+    hospitals = get_hospital_list()
+
+    routes = []
+    for amb in fleet:
+        tracking = amb.get("tracking", {})
+        if tracking.get("case_id") and tracking.get("patient_location_lat"):
+            # Calculate distances
+            from backend.ambulance import haversine
+
+            patient_lat = tracking["patient_location_lat"]
+            patient_lng = tracking["patient_location_lng"]
+            amb_lat = amb["lat"]
+            amb_lng = amb["lng"]
+
+            if tracking.get("destination_hospital_lat") and tracking.get("destination_hospital_lng"):
+                hosp_lat = tracking["destination_hospital_lat"]
+                hosp_lng = tracking["destination_hospital_lng"]
+
+                dist_to_patient = haversine(amb_lat, amb_lng, patient_lat, patient_lng)
+                dist_to_hospital = haversine(patient_lat, patient_lng, hosp_lat, hosp_lng)
+
+                routes.append({
+                    "ambulance_id": amb["id"],
+                    "case_id": tracking["case_id"],
+                    "status": amb["status"],
+                    "current_phase": amb.get("current_phase"),
+                    "driver": amb["driver"],
+                    "patient": {
+                        "location": {"lat": patient_lat, "lng": patient_lng},
+                        "description": tracking.get("patient_description"),
+                    },
+                    "destination_hospital": {
+                        "id": tracking.get("destination_hospital_id"),
+                        "name": tracking.get("destination_hospital_name"),
+                        "location": {
+                            "lat": tracking.get("destination_hospital_lat"),
+                            "lng": tracking.get("destination_hospital_lng"),
+                        },
+                    },
+                    "distances": {
+                        "ambulance_to_patient_km": round(dist_to_patient, 2),
+                        "patient_to_hospital_km": round(dist_to_hospital, 2),
+                    },
+                    "route_summary": f"Ambulance {amb['id']} en-route: {dist_to_patient:.1f} km to patient → {dist_to_hospital:.1f} km to hospital",
+                })
+
+    return {"active_routes": routes, "total_active": len(routes)}
+
+
 # ── Case Status Updates ─────────────────────────────────────────────────
 @app.post("/case/{case_id}/picked-up", tags=["Case"])
 async def case_picked_up(case_id: str):
@@ -469,8 +631,171 @@ async def case_picked_up(case_id: str):
 
 @app.post("/case/{case_id}/delivered", tags=["Case"])
 async def case_delivered(case_id: str):
-    """Mark patient as delivered."""
+    """Mark patient as delivered (bed gets occupied)."""
     result = await patient_delivered(case_id)
     if not result["success"]:
         raise HTTPException(500, result.get("error", "Error"))
     return result
+
+
+@app.post("/case/{case_id}/discharged", tags=["Case"])
+async def case_discharged(case_id: str):
+    """Mark patient as discharged (bed becomes available)."""
+    from backend.decision import patient_discharged
+    result = await patient_discharged(case_id)
+    if not result["success"]:
+        raise HTTPException(500, result.get("error", "Error"))
+    return result
+
+
+class CasePriorityUpdate(BaseModel):
+    priority: str
+
+
+@app.patch("/case/{case_id}/priority", tags=["Case"])
+def update_case_priority(case_id: str, req: CasePriorityUpdate):
+    """Override case priority (admin only)."""
+    from backend.database import update_case_priority as db_update_priority
+
+    valid = ["Critical", "Urgent", "Low"]
+    if req.priority not in valid:
+        raise HTTPException(400, f"Priority must be one of: {valid}")
+
+    result = db_update_priority(case_id, req.priority)
+    if not result:
+        raise HTTPException(404, f"Case {case_id} not found")
+
+    return {"message": f"Case {case_id} priority updated to {req.priority}"}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# ADMIN PANEL
+# ═══════════════════════════════════════════════════════════════════════
+@app.get("/admin")
+def serve_admin():
+    """Serve admin panel."""
+    p = os.path.join(frontend_path, "admin.html")
+    return FileResponse(p) if os.path.exists(p) else {"msg": "Admin panel not found"}
+
+
+# ─── Admin: Hospital Management ─────────────────────────────────────────
+class NewHospital(BaseModel):
+    id: Optional[str] = None
+    name: str
+    lat: float
+    lng: float
+    specialties: list[str]
+    capacity_pct: int = 50
+    icu_beds: int = 10
+    contact: str
+    address: str
+
+
+@app.post("/admin/hospitals", tags=["Admin"])
+def admin_add_hospital(req: NewHospital):
+    """Add a new hospital (admin)."""
+    from backend.hospital import add_hospital
+    hospital = add_hospital(req.model_dump(exclude_none=True))
+    return {"message": "Hospital added", "hospital": hospital}
+
+
+@app.put("/admin/hospitals/{hospital_id}", tags=["Admin"])
+def admin_update_hospital(hospital_id: str, req: NewHospital):
+    """Update hospital details (admin)."""
+    from backend.hospital import update_hospital_details
+    hospital = update_hospital_details(hospital_id, req.model_dump(exclude_none=True))
+    if not hospital:
+        raise HTTPException(404, f"Hospital {hospital_id} not found")
+    return {"message": "Hospital updated", "hospital": hospital}
+
+
+@app.delete("/admin/hospitals/{hospital_id}", tags=["Admin"])
+def admin_delete_hospital(hospital_id: str):
+    """Delete a hospital (admin)."""
+    from backend.hospital import delete_hospital
+    result = delete_hospital(hospital_id)
+    if not result:
+        raise HTTPException(404, f"Hospital {hospital_id} not found")
+    return {"message": f"Hospital {hospital_id} deleted"}
+
+
+# ─── Admin: Ambulance Management ────────────────────────────────────────
+class NewAmbulance(BaseModel):
+    id: Optional[str] = None
+    driver: str
+    phone: str
+    type: str = "BLS"
+    location: str = "HQ"
+    lat: float = 14.4700
+    lng: float = 75.9300
+    equipment: Optional[list[str]] = None
+    maintenance_status: str = "good"
+    fuel_pct: int = 80
+    notes: str = ""
+
+
+@app.post("/admin/ambulances", tags=["Admin"])
+def admin_add_ambulance(req: NewAmbulance):
+    """Add a new ambulance (admin)."""
+    from backend.ambulance import add_ambulance
+    ambulance = add_ambulance(req.model_dump(exclude_none=True))
+    return {"message": "Ambulance added", "ambulance": ambulance}
+
+
+@app.put("/admin/ambulances/{amb_id}", tags=["Admin"])
+def admin_update_ambulance(amb_id: str, req: NewAmbulance):
+    """Update ambulance details (admin)."""
+    from backend.ambulance import update_ambulance_details
+    ambulance = update_ambulance_details(amb_id, req.model_dump(exclude_none=True))
+    if not ambulance:
+        raise HTTPException(404, f"Ambulance {amb_id} not found")
+    return {"message": "Ambulance updated", "ambulance": ambulance}
+
+
+@app.delete("/admin/ambulances/{amb_id}", tags=["Admin"])
+def admin_delete_ambulance(amb_id: str):
+    """Delete an ambulance (admin)."""
+    from backend.ambulance import delete_ambulance
+    result = delete_ambulance(amb_id)
+    if not result:
+        raise HTTPException(404, f"Ambulance {amb_id} not found")
+    return {"message": f"Ambulance {amb_id} deleted"}
+
+
+# ─── Admin: System Overview ─────────────────────────────────────────────
+@app.get("/admin/overview", tags=["Admin"])
+def admin_overview():
+    """Get system overview for admin dashboard."""
+    from backend.ambulance import get_fleet_status, get_fleet_maintenance
+    from backend.hospital import get_hospital_list, get_all_hospitals_status
+    from backend.database import get_analytics
+    from backend.decision import get_case_history
+
+    fleet = get_fleet_status()
+    maintenance = get_fleet_maintenance()
+    hospitals = get_hospital_list()
+    hospital_status = get_all_hospitals_status()
+    analytics = get_analytics()
+    cases = get_case_history()
+
+    return {
+        "fleet": {
+            "total": len(fleet),
+            "available": sum(1 for a in fleet if a["status"] == "available"),
+            "dispatched": sum(1 for a in fleet if a["status"] == "dispatched"),
+            "maintenance": sum(1 for a in fleet if a["maintenance_status"] != "good"),
+        },
+        "hospitals": {
+            "total": len(hospitals),
+            "total_icu_beds": sum(h.get("icu_beds", 0) for h in hospital_status),
+            "avg_capacity": sum(h.get("capacity_pct", 0) for h in hospital_status) / max(len(hospital_status), 1),
+        },
+        "cases": {
+            "today": len(cases),
+            "critical": sum(1 for c in cases if c.get("risk") == "Critical"),
+            "urgent": sum(1 for c in cases if c.get("risk") == "Urgent"),
+            "low": sum(1 for c in cases if c.get("risk") == "Low"),
+        },
+        "analytics": analytics,
+        "maintenance_alerts": [m for m in maintenance if m.get("maintenance_status") != "good"],
+    }

@@ -13,10 +13,31 @@
     --teal: #0F766E; --teal-bg: #F0FDFA; --teal-border: #99F6E4;
     --gray: #374151; --gray-light: #F9FAFB; --gray-mid: #E5E7EB;
     --border: #E5E7EB; --text: #111827; --muted: #6B7280;
+    --bg: #F3F4F6; --bg-secondary: #FFFFFF;
     --font: 'Segoe UI', system-ui, sans-serif;
   }
+
+  /* Dark Mode */
+  body.dark {
+    --red: #EF4444; --red-bg: #450A0A; --red-border: #7F1D1D;
+    --amber: #F59E0B; --red-bg: #451A03; --amber-border: #78350F;
+    --green: #22C55E; --green-bg: #052E16; --green-border: #14532D;
+    --blue: #3B82F6; --blue-bg: #1E3A8A; --blue-border: #1E40AF;
+    --gray: #9CA3AF; --gray-light: #1F2937; --gray-mid: #374151;
+    --border: #374151; --text: #F9FAFB; --muted: #9CA3AF;
+    --bg: #111827; --bg-secondary: #1F2937;
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: var(--font); background: #F3F4F6; color: var(--text); min-height: 100vh; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; transition: background 0.3s, color 0.3s; }
+  body.dark { background: var(--bg); }
+  body.dark .panel { background: var(--bg-secondary); border-color: var(--border); }
+  body.dark .form-area, body.dark .triage-area { background: var(--bg-secondary); }
+  body.dark textarea, body.dark input { background: var(--bg); border-color: var(--border); color: var(--text); }
+  body.dark .log-panel { background: #0A0F1A; }
+  body.dark .detail-card { background: var(--bg-secondary); border-color: var(--border); }
+  body.dark .detail-card-header { background: var(--gray-light); }
+  body.dark .detail-row { border-color: var(--border); }
 
   /* ── Header ── */
   .header {
@@ -309,8 +330,10 @@
   </div>
   <div style="display:flex;gap:6px">
     <a href="/simulator" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;color:var(--muted);text-decoration:none">⚡ Simulator</a>
+    <a href="/tracking" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;color:var(--muted);text-decoration:none">🗺️ Tracking</a>
     <a href="/analytics" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;color:var(--muted);text-decoration:none">📊 Analytics</a>
     <a href="/docs" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;color:var(--muted);text-decoration:none">📖 API Docs</a>
+    <button onclick="toggleDarkMode()" id="dark-mode-btn" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;color:var(--muted)">🌙</button>
   </div>
   <div class="header-right">
     <div class="online-pill" id="sys-status">● System Online</div>
@@ -454,6 +477,20 @@ Examples:
 let API = 'http://localhost:8000';
 let totalEta = 0, caseCount = 0, critCount = 0;
 let busy = false, micActive = false;
+
+// ── Dark Mode ─────────────────────────────────────────────────────────
+function toggleDarkMode() {
+  document.body.classList.toggle('dark');
+  const isDark = document.body.classList.contains('dark');
+  localStorage.setItem('aers_dark_mode', isDark);
+  document.getElementById('dark-mode-btn').textContent = isDark ? '☀️' : '🌙';
+}
+
+// Load dark mode preference
+if (localStorage.getItem('aers_dark_mode') === 'true') {
+  document.body.classList.add('dark');
+  document.getElementById('dark-mode-btn').textContent = '☀️';
+}
 
 // ── Utility ─────────────────────────────────────────────────────────
 function getApi() { return document.getElementById('api-url').value.replace(/\/$/, ''); }

@@ -40,8 +40,10 @@ async def _queue_resolve_callback(amb_id: str, queued_entry: dict):
     # Get hospital and occupy bed
     hospital = get_best_hospital(lat, lng, desc, "emergency", risk)
     hospital_id = None
+    hospital_name = None
     if hospital:
         hospital_id = hospital["id"]
+        hospital_name = hospital.get("name")
         occupy_bed(hospital_id)
 
     mark_ambulance_dispatched(amb_id, queued_entry["case_id"], risk)
@@ -57,7 +59,7 @@ async def _queue_resolve_callback(amb_id: str, queued_entry: dict):
                 "risk":      risk,
                 "amb_id": amb_id,
                 "eta":       eta,
-                "hospital":  hospital["name"] if hospital else None,
+                "hospital":  hospital_name,
                 "message":   (
                     f"Unit {amb_id} auto-assigned to queued "
                     f"{risk} case {queued_entry['case_id']} "
@@ -75,6 +77,14 @@ def run_decision_engine(
     caller_phone: str = "Unknown",
 ) -> dict:
 
+    # ── Input validation
+    if not description or not str(description).strip():
+        return {"success": False, "error": "Description is required"}
+
+    # Validate coordinates
+    if not (-90 <= incident_lat <= 90) or not (-180 <= incident_lng <= 180):
+        return {"success": False, "error": "Invalid coordinates. Lat must be -90 to 90, Lng -180 to 180"}
+
     # ── 1. Triage
     triage = predict_risk(description)
     if not triage["success"]:
@@ -88,6 +98,18 @@ def run_decision_engine(
 
     # ── Hospital selection and ICU bed management
     hospital = get_best_hospital(incident_lat, incident_lng, description, "emergency", risk)
+
+    # Fallback if hospital selection fails
+    if not hospital:
+        hospital = {
+            "id": "H-001",
+            "name": "City General Hospital",
+            "address": "Main Road, Haveri",
+            "lat": 14.4700,
+            "lng": 75.9300,
+            "capacity_pct": 60,
+            "icu_beds": 8,
+        }
 
     if ambulance:
         # Occupy ICU bed when ambulance is dispatched
@@ -123,32 +145,38 @@ def run_decision_engine(
         )
         dispatch_status = "dispatched"
 
-        # Send notification to driver
+        # Send notification to driver (safely)
         if _broadcast_fn:
-            asyncio.create_task(_broadcast_fn({
-                "type": "driver_notification",
-                "data": {
-                    "amb_id": ambulance["id"],
-                    "case_id": case_id,
-                    "patient": {
-                        "name": caller_name,
-                        "phone": caller_phone,
-                        "location_lat": incident_lat,
-                        "location_lng": incident_lng,
-                        "condition": description,
-                        "risk_level": risk,
-                    },
-                    "hospital": {
-                        "id": hospital["id"] if hospital else None,
-                        "name": hospital["name"] if hospital else None,
-                        "address": hospital["address"] if hospital else None,
-                        "lat": hospital_lat,
-                        "lng": hospital_lng,
-                    },
-                    "eta_minutes": ambulance["eta_minutes"],
-                    "message": f"New emergency case! Patient: {caller_name}, Condition: {risk}",
-                }
-            }))
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(_broadcast_fn({
+                        "type": "driver_notification",
+                        "data": {
+                            "amb_id": ambulance["id"],
+                            "case_id": case_id,
+                            "patient": {
+                                "name": caller_name,
+                                "phone": caller_phone,
+                                "location_lat": incident_lat,
+                                "location_lng": incident_lng,
+                                "condition": description,
+                                "risk_level": risk,
+                            },
+                            "hospital": {
+                                "id": hospital["id"] if hospital else None,
+                                "name": hospital["name"] if hospital else None,
+                                "address": hospital["address"] if hospital else None,
+                                "lat": hospital_lat,
+                                "lng": hospital_lng,
+                            },
+                            "eta_minutes": ambulance["eta_minutes"],
+                            "message": f"New emergency case! Patient: {caller_name}, Condition: {risk}",
+                        }
+                    }))
+            except RuntimeError:
+                # No event loop running - skip notification
+                pass
 
         try:
             log_ambulance_event(ambulance["id"], "dispatched", case_id)
@@ -420,10 +448,10 @@ async def patient_picked_up(case_id: str) -> dict:
 
 
 async def patient_delivered(case_id: str) -> dict:
-    """Mark patient as delivered at hospital, release ambulance and bed."""
+    """Mark patient as delivered at hospital - patient now occupies a bed."""
     from backend.database import get_case_by_id, update_delivery_status
-    from backend.hospital import remove_incoming_patient
-    from backend.ambulance import mark_ambulance_available, update_ambulance_status
+    from backend.hospital import remove_incoming_patient, fill_bed
+    from backend.ambulance import mark_ambulance_available, update_ambulance_status, get_ambulance_by_id
 
     case = get_case_by_id(case_id)
     if not case:
@@ -431,6 +459,13 @@ async def patient_delivered(case_id: str) -> dict:
 
     amb_id = case.get("ambulance_id")
     hospital_id = case.get("hospital_id")
+
+    # Check if auto-progress already handled the delivery
+    bed_already_filled = False
+    if amb_id:
+        amb = get_ambulance_by_id(amb_id)
+        if amb and amb.get("current_phase") == "delivered":
+            bed_already_filled = True
 
     # Update ambulance to available
     if amb_id:
@@ -444,10 +479,9 @@ async def patient_delivered(case_id: str) -> dict:
     if hospital_id:
         remove_incoming_patient(hospital_id, case_id)
 
-    # Release hospital bed if occupied
-    if hospital_id:
-        from backend.hospital import release_bed
-        release_bed(hospital_id)
+    # Fill hospital bed (patient now occupies it) - only if not already filled
+    if hospital_id and not bed_already_filled:
+        fill_bed(hospital_id)
 
     # Broadcast to all clients
     if _broadcast_fn:
@@ -457,13 +491,47 @@ async def patient_delivered(case_id: str) -> dict:
                 "case_id": case_id,
                 "ambulance": amb_id,
                 "hospital": case.get("hospital_name"),
-                "message": f"Patient delivered to {case.get('hospital_name')}. Ambulance {amb_id} is now available."
+                "message": f"Patient delivered to {case.get('hospital_name')}. Bed occupied. Ambulance {amb_id} is now available."
             }
         })
 
     return {
         "success": True,
         "case_id": case_id,
-        "message": "Patient delivered. Ambulance is now available for next dispatch.",
+        "message": "Patient delivered. Bed occupied. Ambulance is now available for next dispatch.",
         "ambulance_available": True
+    }
+
+
+async def patient_discharged(case_id: str) -> dict:
+    """Mark patient as discharged from hospital - bed becomes available."""
+    from backend.database import get_case_by_id, update_delivery_status
+    from backend.hospital import free_bed
+
+    case = get_case_by_id(case_id)
+    if not case:
+        return {"success": False, "error": "Case not found"}
+
+    hospital_id = case.get("hospital_id")
+
+    # Free the hospital bed (patient left, bed is now available)
+    if hospital_id:
+        free_bed(hospital_id)
+
+    # Broadcast to all clients
+    if _broadcast_fn:
+        await _broadcast_fn({
+            "type": "patient_discharged",
+            "data": {
+                "case_id": case_id,
+                "hospital": case.get("hospital_name"),
+                "message": f"Patient discharged from {case.get('hospital_name')}. Bed now available."
+            }
+        })
+
+    return {
+        "success": True,
+        "case_id": case_id,
+        "message": "Patient discharged. Bed now available.",
+        "bed_freed": True
     }

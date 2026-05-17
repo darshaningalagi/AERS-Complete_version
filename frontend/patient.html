@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AERS - Patient Portal</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root {
             --red: #DC2626;
@@ -239,41 +241,41 @@
         }
 
         .tracking-map {
-            height: 300px;
+            height: 350px;
             background: var(--bg);
             border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             margin-top: 1rem;
             position: relative;
             overflow: hidden;
+            border: 2px solid var(--border);
         }
 
-        .map-placeholder {
-            text-align: center;
-            color: var(--muted);
+        #patient-map {
+            height: 100%;
+            width: 100%;
+            border-radius: 6px;
         }
 
-        .ambulance-marker {
-            width: 40px;
-            height: 40px;
-            background: var(--red);
-            border-radius: 50%;
+        .map-legend {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            font-size: 11px;
+        }
+
+        .map-legend-item {
             display: flex;
             align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            position: absolute;
-            animation: moveAmbulance 10s ease-in-out infinite;
+            gap: 6px;
+            margin-bottom: 4px;
         }
 
-        @keyframes moveAmbulance {
-            0% { left: 10%; top: 50%; }
-            50% { left: 80%; top: 50%; }
-            100% { left: 10%; top: 50%; }
-        }
+        .map-legend-item:last-child { margin-bottom: 0; }
 
         .timeline {
             margin-top: 1rem;
@@ -504,8 +506,17 @@
 
             <div class="card-header" style="margin-top: 1rem;">🗺️ Live Tracking</div>
             <div class="tracking-map" id="tracking-map">
-                <div class="map-placeholder" id="map-placeholder">
-                    <p>Waiting for ambulance dispatch...</p>
+                <div id="patient-map"></div>
+                <div class="map-legend">
+                    <div class="map-legend-item">
+                        <span style="color: #DC2626;">🏥</span> Hospital
+                    </div>
+                    <div class="map-legend-item">
+                        <span style="color: #1D4ED8;">🚑</span> Ambulance
+                    </div>
+                    <div class="map-legend-item">
+                        <span style="color: #D97706;">📍</span> Your Location
+                    </div>
                 </div>
             </div>
 
@@ -554,6 +565,99 @@
         const API = window.location.origin;
         let caseId = null;
         let ws = null;
+
+        // Map setup
+        let patientMap = null;
+        let ambulanceMarker = null;
+        let hospitalMarker = null;
+        let patientLocationMarker = null;
+        let routeLine = null;
+
+        const ambIcon = L.divIcon({
+          className: 'amb-marker',
+          html: '<div style="background:#1D4ED8;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:3px solid white;">🚑</div>',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+
+        const hospIcon = L.divIcon({
+          className: 'hosp-marker',
+          html: '<div style="background:#DC2626;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:3px solid white;">🏥</div>',
+          iconSize: [32, 32],
+          iconAnchor: [16, 32]
+        });
+
+        const patientIcon = L.divIcon({
+          className: 'patient-marker',
+          html: '<div style="background:#D97706;color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:3px solid white;">📍</div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        function initPatientMap(lat, lng) {
+            if (patientMap) {
+                patientMap.setView([lat, lng], 14);
+                return;
+            }
+            patientMap = L.map('patient-map').setView([lat, lng], 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap'
+            }).addTo(patientMap);
+        }
+
+        function updateTrackingMap(patientLat, patientLng, ambLat, ambLng, ambId, hospLat, hospLng, hospName) {
+            if (!patientMap) initPatientMap(patientLat, patientLng);
+
+            // Patient location marker
+            if (!patientLocationMarker) {
+                patientLocationMarker = L.marker([patientLat, patientLng], { icon: patientIcon })
+                    .addTo(patientMap)
+                    .bindPopup('<b>Your Location</b><br>Emergency location');
+            } else {
+                patientLocationMarker.setLatLng([patientLat, patientLng]);
+            }
+
+            // Ambulance marker
+            if (ambLat && ambLng) {
+                if (!ambulanceMarker) {
+                    ambulanceMarker = L.marker([ambLat, ambLng], { icon: ambIcon })
+                        .addTo(patientMap)
+                        .bindPopup(`<b>Ambulance ${ambId}</b><br>On the way to you`);
+                } else {
+                    ambulanceMarker.setLatLng([ambLat, ambLng]);
+                    ambulanceMarker.setPopupContent(`<b>Ambulance ${ambId}</b><br>On the way to you`);
+                }
+            }
+
+            // Hospital marker
+            if (hospLat && hospLng) {
+                if (!hospitalMarker) {
+                    hospitalMarker = L.marker([hospLat, hospLng], { icon: hospIcon })
+                        .addTo(patientMap)
+                        .bindPopup(`<b>${hospName}</b><br>Destination hospital`);
+                } else {
+                    hospitalMarker.setLatLng([hospLat, hospLng]);
+                    hospitalMarker.setPopupContent(`<b>${hospName}</b><br>Destination hospital`);
+                }
+
+                // Draw route from patient to hospital after pickup
+                if (routeLine) {
+                    patientMap.removeLayer(routeLine);
+                }
+                routeLine = L.polyline([
+                    [patientLat, patientLng],
+                    [hospLat, hospLng]
+                ], { color: '#16A34A', weight: 4, dashArray: '10, 10' }).addTo(patientMap);
+            }
+
+            // Fit bounds to show all markers
+            const bounds = L.latLngBounds([
+                [patientLat, patientLng],
+                ...(ambLat && ambLng ? [[ambLat, ambLng]] : []),
+                ...(hospLat && hospLng ? [[hospLat, hospLng]] : [])
+            ]);
+            patientMap.fitBounds(bounds, { padding: [50, 50] });
+        }
 
         // Connect to WebSocket
         function connectWS() {
@@ -657,16 +761,22 @@
                         document.getElementById('amb-type').textContent = data.ambulance.type || '--';
                         // Show live location
                         const ambLoc = data.ambulance.lat && data.ambulance.lng
-                            ? `Lat: ${data.ambulance.lat}, Lng: ${data.ambulance.lng}`
+                            ? `Lat: ${data.ambulance.lat.toFixed(4)}, Lng: ${data.ambulance.lng.toFixed(4)}`
                             : (data.ambulance.location || '--');
                         document.getElementById('amb-location').textContent = ambLoc;
-
-                        // Show tracking map
-                        document.getElementById('map-placeholder').innerHTML = `
-                            <div class="ambulance-marker" id="amb-marker">${data.ambulance.id}</div>
-                            <p style="margin-top: 60px;">Ambulance ${data.ambulance.id} is on the way</p>
-                        `;
                     }
+
+                    // Update tracking map
+                    const patientLat = data.incident?.lat || 14.4673;
+                    const patientLng = data.incident?.lng || 75.9238;
+                    const ambLat = data.ambulance?.lat;
+                    const ambLng = data.ambulance?.lng;
+                    const ambId = data.ambulance?.id;
+                    const hospLat = data.hospital_details?.lat;
+                    const hospLng = data.hospital_details?.lng;
+                    const hospName = data.hospital;
+
+                    updateTrackingMap(patientLat, patientLng, ambLat, ambLng, ambId, hospLat, hospLng, hospName);
 
                     document.getElementById('hospital-name').textContent = data.hospital || '--';
                     document.getElementById('case-status').textContent = data.status;
@@ -731,6 +841,11 @@
                     document.getElementById('case-id').textContent = caseId;
                     document.getElementById('risk-level').textContent = result.triage.risk_level;
                     document.getElementById('time-received').textContent = result.timestamp.split(' ')[1];
+
+                    // Initialize map with patient location
+                    const patientLat = parseFloat(document.getElementById('lat').value) || 14.4673;
+                    const patientLng = parseFloat(document.getElementById('lng').value) || 75.9238;
+                    initPatientMap(patientLat, patientLng);
 
                     if (result.dispatch.status === 'queued') {
                         document.getElementById('queue-panel').classList.add('show');

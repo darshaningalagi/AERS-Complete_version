@@ -128,11 +128,13 @@ async def _dispatch_incident(risk_filter: str = None) -> dict:
         )
         if result.get("success"):
             risk = result["triage"]["risk_level"]
+            amb_id = result["dispatch"]["ambulance"]["id"] if result["dispatch"]["ambulance"] else None
+            hosp_name = result["hospital"]["name"] if result.get("hospital") else None
             record.update({
                 "actual_risk": risk,
                 "confidence": result["triage"]["confidence"],
-                "ambulance": result["dispatch"]["ambulance"]["id"] if result["dispatch"]["ambulance"] else "none",
-                "hospital": result["hospital"]["name"] if result["hospital"] else "none",
+                "ambulance": amb_id if amb_id else "none",
+                "hospital": hosp_name if hosp_name else "none",
                 "case_id": result["case_id"],
                 "status": "success",
             })

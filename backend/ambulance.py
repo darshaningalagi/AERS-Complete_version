@@ -24,7 +24,8 @@ AMBULANCES = [
      "destination_hospital_id":None,"destination_hospital_name":None,
      "destination_hospital_lat":None,"destination_hospital_lng":None,
      "patient_location_lat":None,"patient_location_lng":None,
-     "patient_description":None,"case_id":None},
+     "patient_description":None,"case_id":None,
+     "maintenance_status":"good","fuel_pct":80,"last_maintenance":"2024-01-15","notes":""},
     {"id":"AMB-03","driver":"Kavita Patel",  "phone":"+91-9876543211",
      "type":"ALS","location":"North Post",    "lat":14.4820,"lng":75.9310,
      "status":"available","assigned_case":None,"assigned_risk":None,"current_phase":"available",
@@ -32,7 +33,8 @@ AMBULANCES = [
      "destination_hospital_id":None,"destination_hospital_name":None,
      "destination_hospital_lat":None,"destination_hospital_lng":None,
      "patient_location_lat":None,"patient_location_lng":None,
-     "patient_description":None,"case_id":None},
+     "patient_description":None,"case_id":None,
+     "maintenance_status":"good","fuel_pct":75,"last_maintenance":"2024-01-20","notes":""},
     {"id":"AMB-07","driver":"Manoj Kumar",   "phone":"+91-9876543212",
      "type":"BLS","location":"West Unit",     "lat":14.4590,"lng":75.9100,
      "status":"available","assigned_case":None,"assigned_risk":None,"current_phase":"available",
@@ -40,7 +42,8 @@ AMBULANCES = [
      "destination_hospital_id":None,"destination_hospital_name":None,
      "destination_hospital_lat":None,"destination_hospital_lng":None,
      "patient_location_lat":None,"patient_location_lng":None,
-     "patient_description":None,"case_id":None},
+     "patient_description":None,"case_id":None,
+     "maintenance_status":"needs_service","fuel_pct":45,"last_maintenance":"2023-12-10","notes":"Brake pads due"},
     {"id":"AMB-12","driver":"Sunita Reddy",  "phone":"+91-9876543213",
      "type":"BLS","location":"South Base",    "lat":14.4520,"lng":75.9280,
      "status":"available","assigned_case":None,"assigned_risk":None,"current_phase":"available",
@@ -48,7 +51,8 @@ AMBULANCES = [
      "destination_hospital_id":None,"destination_hospital_name":None,
      "destination_hospital_lat":None,"destination_hospital_lng":None,
      "patient_location_lat":None,"patient_location_lng":None,
-     "patient_description":None,"case_id":None},
+     "patient_description":None,"case_id":None,
+     "maintenance_status":"good","fuel_pct":90,"last_maintenance":"2024-01-25","notes":""},
 ]
 
 # Scene time per risk level (minutes)
@@ -110,8 +114,24 @@ def haversine(lat1, lng1, lat2, lng2) -> float:
 
 
 def estimate_eta(distance_km: float, risk: str) -> int:
-    # Return 1 minute to reach patient + 1 minute to hospital = 2 min total
-    return 2
+    """
+    Estimate ETA in minutes based on distance and risk level.
+    Uses average speed: 30 km/h in city, faster for Critical (40 km/h)
+    """
+    if distance_km <= 0:
+        return 1
+
+    # Speed depends on risk priority
+    speed_kmh = 40 if risk == "Critical" else (35 if risk == "Urgent" else 30)
+
+    # Time to reach = distance / speed, convert to minutes
+    eta_minutes = int((distance_km / speed_kmh) * 60)
+
+    # Add 1 minute for scene time (loading patient)
+    eta_minutes += 1
+
+    # Minimum 1 minute, maximum 30 minutes
+    return max(1, min(eta_minutes, 30))
 
 
 # ─── Priority pool selection ──────────────────────────────────────────
@@ -291,15 +311,8 @@ def mark_ambulance_available(amb_id: str) -> bool:
             a["status"]        = "available"
             a["assigned_case"] = None
             a["assigned_risk"] = None
-            # Clear all dispatch tracking details
-            a["case_id"] = None
-            a["patient_location_lat"] = None
-            a["patient_location_lng"] = None
-            a["patient_description"] = None
-            a["destination_hospital_id"] = None
-            a["destination_hospital_name"] = None
-            a["destination_hospital_lat"] = None
-            a["destination_hospital_lng"] = None
+            # Clear all dispatch tracking details using the dedicated function
+            clear_dispatch_details(amb_id)
             return True
     return False
 
@@ -375,12 +388,12 @@ def schedule_release(amb_id: str, risk: str, eta_minutes: int,
         mark_ambulance_available(amb_id)
         print(f"[AMB] {amb_id} available (after auto-progress)")
 
-        # Release hospital bed if patient was admitted and remove from incoming
+        # Fill hospital bed (patient now occupies it)
         if hospital_id:
             import backend.hospital as hos_mod
-            hos_mod.release_bed(hospital_id)
+            hos_mod.fill_bed(hospital_id)
             result = hos_mod.remove_incoming_patient(hospital_id, case_id)
-            print(f"[HOSPITAL] Bed released at {hospital_id}")
+            print(f"[HOSPITAL] Bed filled at {hospital_id}")
             print(f"[DEBUG] Removed incoming {case_id}: {result}")
 
         # Broadcast delivered event
@@ -436,9 +449,9 @@ def schedule_release(amb_id: str, risk: str, eta_minutes: int,
         print(f"[AMB] {amb_id} available (after auto-progress)")
         if hospital_id:
             import backend.hospital as hos_mod
-            hos_mod.release_bed(hospital_id)
+            hos_mod.fill_bed(hospital_id)
             hos_mod.remove_incoming_patient(hospital_id, case_id)
-            print(f"[HOSPITAL] Bed released at {hospital_id}")
+            print(f"[HOSPITAL] Bed filled at {hospital_id}")
 
         # Broadcast delivered event
         from backend.decision import _broadcast_fn
@@ -486,6 +499,76 @@ def schedule_release(amb_id: str, risk: str, eta_minutes: int,
         threading.Thread(target=_sync_progress, daemon=True).start()
 
 
+# ─── Ambulance CRUD ───────────────────────────────────────────────────
+def add_ambulance(ambulance_data: dict) -> dict:
+    """Add a new ambulance to the fleet. Returns the new ambulance."""
+    # Generate ID if not provided
+    if "id" not in ambulance_data:
+        max_id = 0
+        for a in AMBULANCES:
+            if a["id"].startswith("AMB-"):
+                try:
+                    num = int(a["id"].split("-")[1])
+                    max_id = max(max_id, num)
+                except:
+                    pass
+        ambulance_data["id"] = f"AMB-{max_id + 1:02d}"
+
+    # Set defaults
+    ambulance_data.setdefault("driver", "Unassigned Driver")
+    ambulance_data.setdefault("phone", "+91-9876500000")
+    ambulance_data.setdefault("type", "BLS")
+    ambulance_data.setdefault("location", "HQ")
+    ambulance_data.setdefault("lat", 14.4700)
+    ambulance_data.setdefault("lng", 75.9300)
+    ambulance_data.setdefault("status", "available")
+    ambulance_data.setdefault("assigned_case", None)
+    ambulance_data.setdefault("assigned_risk", None)
+    ambulance_data.setdefault("current_phase", "available")
+
+    # Equipment based on type
+    if ambulance_data["type"] == "ALS":
+        ambulance_data.setdefault("equipment", ["defibrillator", "ventilator", "cardiac monitor", "IV kit"])
+    else:
+        ambulance_data.setdefault("equipment", ["stretcher", "oxygen", "first aid", "spine board"])
+
+    # Tracking fields
+    ambulance_data.setdefault("destination_hospital_id", None)
+    ambulance_data.setdefault("destination_hospital_name", None)
+    ambulance_data.setdefault("destination_hospital_lat", None)
+    ambulance_data.setdefault("destination_hospital_lng", None)
+    ambulance_data.setdefault("patient_location_lat", None)
+    ambulance_data.setdefault("patient_location_lng", None)
+    ambulance_data.setdefault("patient_description", None)
+    ambulance_data.setdefault("case_id", None)
+    ambulance_data.setdefault("maintenance_status", "good")
+    ambulance_data.setdefault("fuel_pct", 80)
+    ambulance_data.setdefault("last_maintenance", datetime.now().strftime("%Y-%m-%d"))
+    ambulance_data.setdefault("notes", "")
+
+    AMBULANCES.append(ambulance_data)
+    return ambulance_data
+
+
+def delete_ambulance(amb_id: str) -> bool:
+    """Remove an ambulance from the fleet."""
+    global AMBULANCES
+    before = len(AMBULANCES)
+    AMBULANCES = [a for a in AMBULANCES if a["id"] != amb_id]
+    return len(AMBULANCES) < before
+
+
+def update_ambulance_details(amb_id: str, updates: dict) -> Optional[dict]:
+    """Update ambulance details."""
+    for a in AMBULANCES:
+        if a["id"] == amb_id:
+            for key, value in updates.items():
+                if key != "id" and value is not None:
+                    a[key] = value
+            return a
+    return None
+
+
 # ─── Fleet status ─────────────────────────────────────────────────────
 def get_fleet_status() -> list:
     return [dict(a) for a in AMBULANCES]
@@ -524,6 +607,8 @@ def update_ambulance_status(amb_id: str, status: str, case_id: str = None) -> bo
             a["current_phase"] = status
             if case_id:
                 a["assigned_case"] = case_id
+            # Record phase start time for movement tracking
+            set_phase_start_time(amb_id, status)
             return True
     return False
 
@@ -552,7 +637,289 @@ def get_all_ambulances_status() -> list:
                 "destination_hospital_name": a.get("destination_hospital_name"),
                 "destination_hospital_lat": a.get("destination_hospital_lat"),
                 "destination_hospital_lng": a.get("destination_hospital_lng"),
+            },
+            # Movement simulation
+            "movement": get_ambulance_movement(a),
+        }
+        for a in AMBULANCES
+    ]
+
+
+# ─── Movement Simulation ────────────────────────────────────────────────
+# Track phase start times for movement calculation
+PHASE_TIMES: dict = {}  # amb_id -> {phase: timestamp}
+
+
+def get_phase_start_time(amb_id: str, phase: str) -> Optional[datetime]:
+    """Get when a phase started."""
+    if amb_id not in PHASE_TIMES:
+        return None
+    return PHASE_TIMES[amb_id].get(phase)
+
+
+def set_phase_start_time(amb_id: str, phase: str):
+    """Record when a phase started."""
+    if amb_id not in PHASE_TIMES:
+        PHASE_TIMES[amb_id] = {}
+    PHASE_TIMES[amb_id][phase] = datetime.now()
+
+
+def get_ambulance_movement(amb: dict) -> dict:
+    """
+    Calculate current position and progress for an ambulance.
+    Returns current lat/lng, progress %, and ETA to destination.
+    Uses time elapsed since phase start for real-time movement.
+    """
+    phase = amb.get("current_phase", "available")
+    if phase == "available":
+        return {"phase": "available", "progress": 0, "current_lat": amb["lat"], "current_lng": amb["lng"], "speed_kmh": 0}
+
+    # Get key locations
+    start_lat, start_lng = amb["lat"], amb["lng"]
+    patient_lat = amb.get("patient_location_lat")
+    patient_lng = amb.get("patient_location_lng")
+    hospital_lat = amb.get("destination_hospital_lat")
+    hospital_lng = amb.get("destination_hospital_lng")
+
+    # Get phase start time for timing calculation
+    phase_start = PHASE_TIMES.get(amb["id"], {}).get(phase)
+    if phase_start:
+        elapsed_seconds = (datetime.now() - phase_start).total_seconds()
+    else:
+        elapsed_seconds = 0
+
+    # Determine what route the ambulance is on
+    route_type = None
+    if phase in ["dispatched", "enroute"]:
+        route_type = "to_patient"
+    elif phase in ["arrived", "patient_picked"]:
+        route_type = "to_hospital"
+    elif phase == "hospital_enroute":
+        route_type = "to_hospital"
+
+    # Calculate position based on route and elapsed time
+    if route_type == "to_patient" and patient_lat and patient_lng:
+        # Heading to patient
+        distance_total = haversine(start_lat, start_lng, patient_lat, patient_lng)
+        if distance_total > 0:
+            # Average speed 35 km/h, convert to degrees
+            speed_deg_per_sec = (35 / 111) / 3600  # ~0.000097 degrees per second
+            distance_covered = speed_deg_per_sec * elapsed_seconds * 1000  # Convert to approx km then degrees
+
+            # Calculate progress percentage
+            progress = min(50, int((elapsed_seconds / 60) * 50))  # 50% for first leg, takes ~1 min
+
+            # Interpolate position
+            ratio = min(1, distance_covered / distance_total)
+            current_lat = start_lat + (patient_lat - start_lat) * ratio
+            current_lng = start_lng + (patient_lng - start_lng) * ratio
+
+            # Calculate ETA
+            remaining_dist = distance_total - (distance_total * ratio)
+            eta_seconds = int(remaining_dist / 35 * 3600) if distance_total > 0 else 0
+
+            return {
+                "phase": phase,
+                "progress": progress,
+                "current_lat": round(current_lat, 6),
+                "current_lng": round(current_lng, 6),
+                "eta_seconds": max(0, eta_seconds),
+                "speed_kmh": 35,
+                "route": "to_patient",
+                "distance_km": round(distance_total, 2)
             }
+
+    elif route_type == "to_hospital" and patient_lat and patient_lng and hospital_lat and hospital_lng:
+        # Heading to hospital from patient location
+        distance_total = haversine(patient_lat, patient_lng, hospital_lat, hospital_lng)
+        if distance_total > 0:
+            # After pickup, progress from 50% to 100%
+            speed_deg_per_sec = (35 / 111) / 3600
+            distance_covered = speed_deg_per_sec * elapsed_seconds * 1000
+
+            # Progress from 50% (after pickup) to 100%
+            time_to_cover = 60  # Assume 1 minute to reach hospital
+            progress = min(100, 50 + int((elapsed_seconds / time_to_cover) * 50))
+
+            # Interpolate position from patient to hospital
+            ratio = min(1, distance_covered / distance_total)
+            current_lat = patient_lat + (hospital_lat - patient_lat) * ratio
+            current_lng = patient_lng + (hospital_lng - patient_lng) * ratio
+
+            remaining_dist = distance_total - (distance_total * ratio)
+            eta_seconds = int(remaining_dist / 35 * 3600) if distance_total > 0 else 0
+
+            return {
+                "phase": phase,
+                "progress": progress,
+                "current_lat": round(current_lat, 6),
+                "current_lng": round(current_lng, 6),
+                "eta_seconds": max(0, eta_seconds),
+                "speed_kmh": 35,
+                "route": "to_hospital",
+                "distance_km": round(distance_total, 2)
+            }
+
+    # Fallback - return current position
+    return {
+        "phase": phase,
+        "progress": 0,
+        "current_lat": start_lat,
+        "current_lng": start_lng,
+        "eta_seconds": 0,
+        "speed_kmh": 0,
+        "route": "unknown"
+    }
+
+    # Get key locations
+    start_lat, start_lng = amb["lat"], amb["lng"]
+    patient_lat = amb.get("patient_location_lat")
+    patient_lng = amb.get("patient_location_lng")
+    hospital_lat = amb.get("destination_hospital_lat")
+    hospital_lng = amb.get("destination_hospital_lng")
+
+    if not patient_lat or not patient_lng:
+        return {"phase": phase, "progress": 0, "current_lat": start_lat, "current_lng": start_lng}
+
+    # Calculate progress based on phase
+    progress = 0
+    current_lat, current_lng = start_lat, start_lng
+    eta_seconds = 0
+
+    if phase == "dispatched" or phase == "enroute":
+        # Ambulance is heading to patient
+        dist_total = haversine(start_lat, start_lng, patient_lat, patient_lng)
+        if dist_total > 0:
+            dist_covered = 0.3 * dist_total  # Assume 30% covered after 30 sec
+            progress = min(30, int((dist_covered / dist_total) * 100))
+            current_lat = start_lat + (patient_lat - start_lat) * (progress / 100)
+            current_lng = start_lng + (patient_lng - start_lng) * (progress / 100)
+            eta_seconds = int((dist_total - dist_covered) / 40 * 3600)  # 40 km/h
+        else:
+            # Same location - patient is at ambulance position
+            progress = 30
+            current_lat, current_lng = patient_lat, patient_lng
+            eta_seconds = 0
+
+    elif phase == "arrived" or phase == "patient_picked":
+        # At patient location, heading to hospital
+        progress = 50
+        current_lat, current_lng = patient_lat, patient_lng
+        if hospital_lat and hospital_lng:
+            dist_to_hospital = haversine(patient_lat, patient_lng, hospital_lat, hospital_lng)
+            eta_seconds = int(dist_to_hospital / 40 * 3600) if dist_to_hospital > 0 else 0
+        else:
+            # No hospital destination yet
+            eta_seconds = 0
+
+    elif phase == "hospital_enroute":
+        # Heading to hospital
+        if hospital_lat and hospital_lng:
+            dist_total = haversine(patient_lat, patient_lng, hospital_lat, hospital_lng)
+            if dist_total > 0:
+                dist_covered = 0.7 * dist_total  # Assume 70% covered
+                progress = 50 + min(50, int((dist_covered / dist_total) * 50))
+                current_lat = patient_lat + (hospital_lat - patient_lat) * ((progress - 50) / 50)
+                current_lng = patient_lng + (hospital_lng - patient_lng) * ((progress - 50) / 50)
+                eta_seconds = int((dist_total - dist_covered) / 40 * 3600)
+            else:
+                # Same location
+                progress = 100
+                current_lat, current_lng = hospital_lat, hospital_lng
+                eta_seconds = 0
+        else:
+            # No hospital destination set
+            progress = 50
+            current_lat, current_lng = patient_lat, patient_lng
+            eta_seconds = 0
+
+    elif phase == "delivered":
+        progress = 100
+        current_lat, current_lng = hospital_lat, hospital_lng
+        eta_seconds = 0
+
+    return {
+        "phase": phase,
+        "progress": progress,
+        "current_lat": round(current_lat, 6),
+        "current_lng": round(current_lng, 6),
+        "eta_seconds": max(0, eta_seconds),
+    }
+
+
+def update_ambulance_position(amb_id: str, new_lat: float, new_lng: float) -> bool:
+    """Manually update ambulance GPS coordinates."""
+    for a in AMBULANCES:
+        if a["id"] == amb_id:
+            a["lat"] = new_lat
+            a["lng"] = new_lng
+            return True
+    return False
+
+
+# ─── Maintenance Tracking ───────────────────────────────────────────────
+def update_maintenance_status(amb_id: str, status: str, fuel_pct: int = None, notes: str = None) -> bool:
+    """Update ambulance maintenance status."""
+    valid_statuses = ["good", "needs_service", "maintenance", "out_of_service"]
+    if status not in valid_statuses:
+        return False
+
+    for a in AMBULANCES:
+        if a["id"] == amb_id:
+            a["maintenance_status"] = status
+            if fuel_pct is not None:
+                a["fuel_pct"] = max(0, min(100, fuel_pct))
+            if notes is not None:
+                a["notes"] = notes
+            if status in ["needs_service", "maintenance", "out_of_service"]:
+                # Set status to unavailable if needs maintenance
+                if a["status"] == "available":
+                    a["status"] = "maintenance"
+            return True
+    return False
+
+
+def record_maintenance(amb_id: str) -> bool:
+    """Record maintenance completed, reset status to good."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    for a in AMBULANCES:
+        if a["id"] == amb_id:
+            a["maintenance_status"] = "good"
+            a["last_maintenance"] = today
+            a["notes"] = ""
+            # Restore availability if was in maintenance
+            if a.get("status") == "maintenance":
+                a["status"] = "available"
+            return True
+    return False
+
+
+def get_ambulance_maintenance(amb_id: str) -> Optional[dict]:
+    """Get maintenance info for an ambulance."""
+    for a in AMBULANCES:
+        if a["id"] == amb_id:
+            return {
+                "ambulance_id": a["id"],
+                "maintenance_status": a.get("maintenance_status", "good"),
+                "fuel_pct": a.get("fuel_pct", 0),
+                "last_maintenance": a.get("last_maintenance", "Unknown"),
+                "notes": a.get("notes", ""),
+            }
+    return None
+
+
+def get_fleet_maintenance() -> list:
+    """Get maintenance status for entire fleet."""
+    return [
+        {
+            "ambulance_id": a["id"],
+            "driver": a["driver"],
+            "type": a["type"],
+            "maintenance_status": a.get("maintenance_status", "good"),
+            "fuel_pct": a.get("fuel_pct", 0),
+            "last_maintenance": a.get("last_maintenance", "Unknown"),
+            "notes": a.get("notes", ""),
+            "status": a["status"],
         }
         for a in AMBULANCES
     ]

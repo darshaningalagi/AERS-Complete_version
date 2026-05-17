@@ -13,8 +13,11 @@ class ConnectionManager:
         self.active: Set[WebSocket] = set()
 
     async def connect(self, ws: WebSocket):
-        await ws.accept()
-        self.active.add(ws)
+        try:
+            await ws.accept()
+            self.active.add(ws)
+        except Exception:
+            pass
 
     def disconnect(self, ws: WebSocket):
         self.active.discard(ws)
@@ -23,7 +26,11 @@ class ConnectionManager:
         """Send a JSON message to every connected client."""
         if not self.active:
             return
-        text = json.dumps(message)
+        try:
+            text = json.dumps(message)
+        except Exception:
+            text = json.dumps({"type": "error", "data": {"message": "Failed to serialize message"}})
+
         dead = set()
         for ws in self.active:
             try:
