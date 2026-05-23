@@ -6,10 +6,7 @@
 
 ---
 
-**Submitted by:** Darshan
-
-**Under the Guidance of:** Claude AI Assistant
-
+**Submitted by:** Darshan Ingalagi
 ---
 
 ## Certificate
@@ -18,9 +15,9 @@ This is to certify that the project work entitled "AI-Based Enhanced Emergency R
 
 This project has been designed and implemented as a web-based emergency response system with ML-powered triage, ambulance dispatch, and hospital selection capabilities.
 
-**Project Guide:** ____________________
+**Project Guide:** Supriya Jadhav maam & Avinash sir Principal Of ptes
 
-**HOD:** ____________________
+**HOD:** Shubha maam
 
 ---
 
