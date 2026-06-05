@@ -62,8 +62,8 @@ with open(model_path, 'wb') as f:
 with open(vec_path, 'wb') as f:
     pickle.dump(vectorizer, f)
 
-print(f"\nModel saved    → {model_path}")
-print(f"Vectorizer saved → {vec_path}")
+print(f"\nModel saved    -> {model_path}")
+print(f"Vectorizer saved -> {vec_path}")
 
 # ─── Step 8: Manual prediction test ──────────────────────────────────
 print("\n--- Manual prediction test ---")

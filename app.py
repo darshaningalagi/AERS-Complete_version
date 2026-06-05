@@ -2,7 +2,7 @@
 AERS — AI-Based Enhanced Emergency Response System
 FastAPI Backend  |  v3.0
 """
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -34,8 +34,17 @@ set_broadcast(manager.broadcast)
 set_decision_broadcast(manager.broadcast)
 
 app = FastAPI(title="AERS", description="AI Emergency Response System", version="3.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
+
+# Configure CORS - allow specific origins (configure via environment variable)
+# For development, use localhost origins; for production, specify exact domains
+_allowed_origins = os.environ.get("AERS_CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+)
 app.include_router(sim_router)
 
 frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
@@ -669,6 +678,71 @@ def update_case_priority(case_id: str, req: CasePriorityUpdate):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# ADMIN AUTHENTICATION
+# ═══════════════════════════════════════════════════════════════════════
+class LoginRequest(BaseModel):
+    password: str
+
+
+class AuthResponse(BaseModel):
+    success: bool
+    token: Optional[str] = None
+    expires_at: Optional[str] = None
+    message: str
+
+
+@app.post("/admin/login", tags=["Admin"])
+def admin_login(req: LoginRequest) -> AuthResponse:
+    """
+    Admin login - returns token if password is correct.
+    Default password: aers2024 (change via AERS_ADMIN_PASSWORD_HASH env var)
+    """
+    from backend.auth import verify_password, create_session
+
+    if verify_password(req.password):
+        token, expires_at = create_session()
+        return AuthResponse(
+            success=True,
+            token=token,
+            expires_at=expires_at.isoformat(),
+            message="Login successful"
+        )
+    return AuthResponse(success=False, message="Invalid password")
+
+
+@app.post("/admin/logout", tags=["Admin"])
+def admin_logout(token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Admin logout - invalidates token."""
+    from backend.auth import destroy_session
+    auth_token = token or authorization
+    if auth_token:
+        destroy_session(auth_token)
+    return {"message": "Logged out"}
+
+
+@app.get("/admin/verify", tags=["Admin"])
+def admin_verify(token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Verify if token is valid."""
+    from backend.auth import validate_session, get_session_info
+    auth_token = token or authorization
+    if validate_session(auth_token):
+        session = get_session_info(auth_token)
+        return {"valid": True, "expires_at": session.get("expires_at").isoformat() if session else None}
+    return {"valid": False, "message": "Invalid or expired token"}
+
+
+def verify_admin_token(token: Optional[str]) -> bool:
+    """Verify admin token - returns False if token is None or invalid."""
+    from backend.auth import validate_session
+    if not token:
+        return False
+    # Strip "Bearer " prefix if present
+    if token.startswith("Bearer "):
+        token = token[7:]
+    return validate_session(token)
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # ADMIN PANEL
 # ═══════════════════════════════════════════════════════════════════════
 @app.get("/admin")
@@ -692,16 +766,22 @@ class NewHospital(BaseModel):
 
 
 @app.post("/admin/hospitals", tags=["Admin"])
-def admin_add_hospital(req: NewHospital):
-    """Add a new hospital (admin)."""
+def admin_add_hospital(req: NewHospital, token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Add a new hospital (admin). Requires authentication."""
+    auth_token = token or authorization
+    if not verify_admin_token(auth_token):
+        raise HTTPException(401, "Authentication required. Provide valid token.")
     from backend.hospital import add_hospital
     hospital = add_hospital(req.model_dump(exclude_none=True))
     return {"message": "Hospital added", "hospital": hospital}
 
 
 @app.put("/admin/hospitals/{hospital_id}", tags=["Admin"])
-def admin_update_hospital(hospital_id: str, req: NewHospital):
-    """Update hospital details (admin)."""
+def admin_update_hospital(hospital_id: str, req: NewHospital, token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Update hospital details (admin). Requires authentication."""
+    auth_token = token or authorization
+    if not verify_admin_token(auth_token):
+        raise HTTPException(401, "Authentication required. Provide valid token.")
     from backend.hospital import update_hospital_details
     hospital = update_hospital_details(hospital_id, req.model_dump(exclude_none=True))
     if not hospital:
@@ -710,8 +790,11 @@ def admin_update_hospital(hospital_id: str, req: NewHospital):
 
 
 @app.delete("/admin/hospitals/{hospital_id}", tags=["Admin"])
-def admin_delete_hospital(hospital_id: str):
-    """Delete a hospital (admin)."""
+def admin_delete_hospital(hospital_id: str, token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Delete a hospital (admin). Requires authentication."""
+    auth_token = token or authorization
+    if not verify_admin_token(auth_token):
+        raise HTTPException(401, "Authentication required. Provide valid token.")
     from backend.hospital import delete_hospital
     result = delete_hospital(hospital_id)
     if not result:
@@ -735,16 +818,22 @@ class NewAmbulance(BaseModel):
 
 
 @app.post("/admin/ambulances", tags=["Admin"])
-def admin_add_ambulance(req: NewAmbulance):
-    """Add a new ambulance (admin)."""
+def admin_add_ambulance(req: NewAmbulance, token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Add a new ambulance (admin). Requires authentication."""
+    auth_token = token or authorization
+    if not verify_admin_token(auth_token):
+        raise HTTPException(401, "Authentication required. Provide valid token.")
     from backend.ambulance import add_ambulance
     ambulance = add_ambulance(req.model_dump(exclude_none=True))
     return {"message": "Ambulance added", "ambulance": ambulance}
 
 
 @app.put("/admin/ambulances/{amb_id}", tags=["Admin"])
-def admin_update_ambulance(amb_id: str, req: NewAmbulance):
-    """Update ambulance details (admin)."""
+def admin_update_ambulance(amb_id: str, req: NewAmbulance, token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Update ambulance details (admin). Requires authentication."""
+    auth_token = token or authorization
+    if not verify_admin_token(auth_token):
+        raise HTTPException(401, "Authentication required. Provide valid token.")
     from backend.ambulance import update_ambulance_details
     ambulance = update_ambulance_details(amb_id, req.model_dump(exclude_none=True))
     if not ambulance:
@@ -753,8 +842,11 @@ def admin_update_ambulance(amb_id: str, req: NewAmbulance):
 
 
 @app.delete("/admin/ambulances/{amb_id}", tags=["Admin"])
-def admin_delete_ambulance(amb_id: str):
-    """Delete an ambulance (admin)."""
+def admin_delete_ambulance(amb_id: str, token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Delete an ambulance (admin). Requires authentication."""
+    auth_token = token or authorization
+    if not verify_admin_token(auth_token):
+        raise HTTPException(401, "Authentication required. Provide valid token.")
     from backend.ambulance import delete_ambulance
     result = delete_ambulance(amb_id)
     if not result:
@@ -764,8 +856,12 @@ def admin_delete_ambulance(amb_id: str):
 
 # ─── Admin: System Overview ─────────────────────────────────────────────
 @app.get("/admin/overview", tags=["Admin"])
-def admin_overview():
-    """Get system overview for admin dashboard."""
+def admin_overview(token: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    """Get system overview for admin dashboard. Requires authentication."""
+    # Accept token from query param or Authorization header
+    auth_token = token or authorization
+    if not verify_admin_token(auth_token):
+        raise HTTPException(401, "Authentication required. Provide valid token.")
     from backend.ambulance import get_fleet_status, get_fleet_maintenance
     from backend.hospital import get_hospital_list, get_all_hospitals_status
     from backend.database import get_analytics

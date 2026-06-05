@@ -1,5 +1,5 @@
 """
-AERS — Manual Test Suite
+AERS - Manual Test Suite
 Run: python tests.py
 """
 import sys, os
@@ -25,7 +25,7 @@ def test(label, value, expected_key=None):
     return status == "PASS"
 
 # ── MODULE 3: Triage prediction ──────────────────────────────────────
-section("MODULE 3 — ML Triage Prediction")
+section("MODULE 3 - ML Triage Prediction")
 
 cases = [
     ("cardiac arrest not breathing no pulse", "Critical"),
@@ -46,40 +46,40 @@ for desc, expected in cases:
     result = predict_risk(desc)
     if not result["success"]:
         got = f"ERROR: {result['error'][:30]}"
-        conf = "—"
+        conf = "-"
     else:
         got = result["risk_level"]
         conf = f"{result['confidence']}%"
-    match = "✓" if got == expected else ("✓" if expected is None else "✗")
+    match = "OK" if got == expected else ("OK" if expected is None else "FAIL")
     short = desc[:43] if desc else "(empty)"
     print(f"  {match} {short:<45} {str(expected):<12} {got:<12} {conf}")
 
 # ── MODULE 5: Ambulance dispatch ──────────────────────────────────────
-section("MODULE 5 — Ambulance Dispatch")
+section("MODULE 5 - Ambulance Dispatch")
 
 print("\n  Fleet status before dispatch:")
 for a in get_fleet_status():
-    print(f"    {a['id']} — {a['status']} — {a['location']}")
+    print(f"    {a['id']} - {a['status']} - {a['location']}")
 
 amb = get_nearest_ambulance(INCIDENT_LAT, INCIDENT_LNG, "Critical")
 if amb:
-    print(f"\n  Selected for Critical: {amb['id']} ({amb['type']}) — {amb['distance_km']}km — ETA {amb['eta_minutes']}min")
+    print(f"\n  Selected for Critical: {amb['id']} ({amb['type']}) - {amb['distance_km']}km - ETA {amb['eta_minutes']}min")
     mark_ambulance_busy(amb['id'])
     print(f"  Marked {amb['id']} as busy")
 
 amb2 = get_nearest_ambulance(INCIDENT_LAT, INCIDENT_LNG, "Low")
 if amb2:
-    print(f"  Selected for Low: {amb2['id']} ({amb2['type']}) — {amb2['distance_km']}km")
+    print(f"  Selected for Low: {amb2['id']} ({amb2['type']}) - {amb2['distance_km']}km")
 
 print("\n  Fleet status after dispatch:")
 for a in get_fleet_status():
-    print(f"    {a['id']} — {a['status']}")
+    print(f"    {a['id']} - {a['status']}")
 
 mark_ambulance_available(amb['id'])
-print(f"\n  Reset {amb['id']} to available ✓")
+print(f"\n  Reset {amb['id']} to available OK")
 
 # ── MODULE 6: Hospital selection ──────────────────────────────────────
-section("MODULE 6 — Hospital Selection Algorithm")
+section("MODULE 6 - Hospital Selection Algorithm")
 
 test_inputs = [
     ("cardiac arrest chest pain heart", "Critical"),
@@ -92,10 +92,10 @@ test_inputs = [
 for desc, risk in test_inputs:
     h = get_best_hospital(INCIDENT_LAT, INCIDENT_LNG, desc, risk, risk)
     if h:
-        print(f"  [{risk:<8}] {desc[:40]:<42} → {h['name']} (spec: {h['specialty_matched']}, score: {h['score']})")
+        print(f"  [{risk:<8}] {desc[:40]:<42} -> {h['name']} (spec: {h['specialty_matched']}, score: {h['score']})")
 
 # ── MODULE 7: Full decision engine ────────────────────────────────────
-section("MODULE 7 — Full Decision Engine (End-to-End)")
+section("MODULE 7 - Full Decision Engine (End-to-End)")
 
 result = run_decision_engine(
     description="65 year old male, chest pain, sweating, left arm pain, history of hypertension",
@@ -112,19 +112,19 @@ if result["success"]:
     print(f"  Action      : {result['triage']['recommended_action']}")
     if result['dispatch']['ambulance']:
         a = result['dispatch']['ambulance']
-        print(f"  Ambulance   : {a['id']} — ETA {a['eta_minutes']}min — Driver: {a['driver']}")
+        print(f"  Ambulance   : {a['id']} - ETA {a['eta_minutes']}min - Driver: {a['driver']}")
     if result['hospital']:
         h = result['hospital']
-        print(f"  Hospital    : {h['name']} — {h['specialty_matched']} — {h['icu_beds']} ICU")
+        print(f"  Hospital    : {h['name']} - {h['specialty_matched']} - {h['icu_beds']} ICU")
     print(f"\n  Timeline steps:")
     for step in result['timeline']:
-        status_icon = "✓" if step['status']=='done' else "→" if step['status']=='active' else "·"
+        status_icon = "OK" if step['status']=='done' else ">" if step['status']=='active' else "."
         print(f"    {status_icon} {step['step']}")
 else:
     print(f"  FAILED: {result['error']}")
 
 # ── MODULE 9: Edge cases ──────────────────────────────────────────────
-section("MODULE 9 — Edge Cases")
+section("MODULE 9 - Edge Cases")
 
 edge_cases = [
     ("Empty string", ""),
@@ -139,9 +139,9 @@ edge_cases = [
 for label, txt in edge_cases:
     result = predict_risk(txt)
     if result["success"]:
-        print(f"  {label:<25} → {result['risk_level']:<10} ({result['confidence']}%)")
+        print(f"  {label:<25} -> {result['risk_level']:<10} ({result['confidence']}%)")
     else:
-        print(f"  {label:<25} → ERROR: {result['error']}")
+        print(f"  {label:<25} -> ERROR: {result['error']}")
 
 print("\n" + "="*55)
 print("  All tests complete!")

@@ -222,8 +222,8 @@ def add_hospital(hospital_data: dict) -> dict:
                 try:
                     num = int(h["id"].split("-")[1])
                     max_id = max(max_id, num)
-                except:
-                    pass
+                except (ValueError, IndexError):
+                    pass  # Skip invalid ID formats
         hospital_data["id"] = f"H-{max_id + 1:03d}"
 
     # Set defaults

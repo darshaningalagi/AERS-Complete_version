@@ -376,8 +376,8 @@ def schedule_release(amb_id: str, risk: str, eta_minutes: int,
                         "message": f"Patient picked up by {amb_id}. Auto-progressing to hospital."
                     }
                 })
-            except:
-                pass
+            except Exception:
+                pass  # Broadcast failed - non-critical
 
         # Wait 1 more minute then mark as delivered
         await asyncio.sleep(ARRIVAL_DELAY)
@@ -407,8 +407,8 @@ def schedule_release(amb_id: str, risk: str, eta_minutes: int,
                         "message": f"Patient delivered to hospital. {amb_id} is now available."
                     }
                 })
-            except:
-                pass
+            except Exception:
+                pass  # Broadcast failed - non-critical
 
         # Auto-assign to next waiting case
         next_case = _dequeue()
@@ -466,8 +466,8 @@ def schedule_release(amb_id: str, risk: str, eta_minutes: int,
                         "message": f"Patient delivered to hospital. {amb_id} is now available."
                     }
                 }))
-            except:
-                pass
+            except Exception:
+                pass  # Broadcast failed - non-critical
 
         # Auto-assign to next waiting case
         next_case = _dequeue()
@@ -510,8 +510,8 @@ def add_ambulance(ambulance_data: dict) -> dict:
                 try:
                     num = int(a["id"].split("-")[1])
                     max_id = max(max_id, num)
-                except:
-                    pass
+                except (ValueError, IndexError):
+                    pass  # Skip invalid ID formats
         ambulance_data["id"] = f"AMB-{max_id + 1:02d}"
 
     # Set defaults
@@ -769,81 +769,6 @@ def get_ambulance_movement(amb: dict) -> dict:
         "eta_seconds": 0,
         "speed_kmh": 0,
         "route": "unknown"
-    }
-
-    # Get key locations
-    start_lat, start_lng = amb["lat"], amb["lng"]
-    patient_lat = amb.get("patient_location_lat")
-    patient_lng = amb.get("patient_location_lng")
-    hospital_lat = amb.get("destination_hospital_lat")
-    hospital_lng = amb.get("destination_hospital_lng")
-
-    if not patient_lat or not patient_lng:
-        return {"phase": phase, "progress": 0, "current_lat": start_lat, "current_lng": start_lng}
-
-    # Calculate progress based on phase
-    progress = 0
-    current_lat, current_lng = start_lat, start_lng
-    eta_seconds = 0
-
-    if phase == "dispatched" or phase == "enroute":
-        # Ambulance is heading to patient
-        dist_total = haversine(start_lat, start_lng, patient_lat, patient_lng)
-        if dist_total > 0:
-            dist_covered = 0.3 * dist_total  # Assume 30% covered after 30 sec
-            progress = min(30, int((dist_covered / dist_total) * 100))
-            current_lat = start_lat + (patient_lat - start_lat) * (progress / 100)
-            current_lng = start_lng + (patient_lng - start_lng) * (progress / 100)
-            eta_seconds = int((dist_total - dist_covered) / 40 * 3600)  # 40 km/h
-        else:
-            # Same location - patient is at ambulance position
-            progress = 30
-            current_lat, current_lng = patient_lat, patient_lng
-            eta_seconds = 0
-
-    elif phase == "arrived" or phase == "patient_picked":
-        # At patient location, heading to hospital
-        progress = 50
-        current_lat, current_lng = patient_lat, patient_lng
-        if hospital_lat and hospital_lng:
-            dist_to_hospital = haversine(patient_lat, patient_lng, hospital_lat, hospital_lng)
-            eta_seconds = int(dist_to_hospital / 40 * 3600) if dist_to_hospital > 0 else 0
-        else:
-            # No hospital destination yet
-            eta_seconds = 0
-
-    elif phase == "hospital_enroute":
-        # Heading to hospital
-        if hospital_lat and hospital_lng:
-            dist_total = haversine(patient_lat, patient_lng, hospital_lat, hospital_lng)
-            if dist_total > 0:
-                dist_covered = 0.7 * dist_total  # Assume 70% covered
-                progress = 50 + min(50, int((dist_covered / dist_total) * 50))
-                current_lat = patient_lat + (hospital_lat - patient_lat) * ((progress - 50) / 50)
-                current_lng = patient_lng + (hospital_lng - patient_lng) * ((progress - 50) / 50)
-                eta_seconds = int((dist_total - dist_covered) / 40 * 3600)
-            else:
-                # Same location
-                progress = 100
-                current_lat, current_lng = hospital_lat, hospital_lng
-                eta_seconds = 0
-        else:
-            # No hospital destination set
-            progress = 50
-            current_lat, current_lng = patient_lat, patient_lng
-            eta_seconds = 0
-
-    elif phase == "delivered":
-        progress = 100
-        current_lat, current_lng = hospital_lat, hospital_lng
-        eta_seconds = 0
-
-    return {
-        "phase": phase,
-        "progress": progress,
-        "current_lat": round(current_lat, 6),
-        "current_lng": round(current_lng, 6),
-        "eta_seconds": max(0, eta_seconds),
     }
 
 

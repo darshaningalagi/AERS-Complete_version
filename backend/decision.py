@@ -2,13 +2,13 @@ import uuid
 import asyncio
 from datetime import datetime
 from typing import Optional
-from backend.predictor import predict_risk
+from backend.predictor import predict_risk, sanitize_input, validate_coordinates
 from backend.ambulance import (
     get_nearest_ambulance, mark_ambulance_dispatched,
     mark_ambulance_busy, schedule_release,
     _enqueue, get_queue, queue_size, set_dispatch_details
 )
-from backend.hospital import get_best_hospital, occupy_bed, release_bed, get_hospital_list
+from backend.hospital import get_best_hospital, get_hospital_list
 from backend.database import save_case, get_recent_cases, log_ambulance_event
 
 # Broadcast hook — set by app.py
@@ -22,7 +22,7 @@ def set_decision_broadcast(fn):
 async def _queue_resolve_callback(amb_id: str, queued_entry: dict):
     """Called when a unit is released and a queued case is next."""
     from backend.ambulance import mark_ambulance_dispatched, schedule_release, haversine, estimate_eta, AMBULANCES
-    from backend.hospital import get_best_hospital, occupy_bed
+    from backend.hospital import get_best_hospital
 
     # Find the unit that just became free
     amb_obj = next((a for a in AMBULANCES if a["id"] == amb_id), None)
@@ -37,14 +37,13 @@ async def _queue_resolve_callback(amb_id: str, queued_entry: dict):
     dist = haversine(lat, lng, amb_obj["lat"], amb_obj["lng"])
     eta  = estimate_eta(dist, risk)
 
-    # Get hospital and occupy bed
+    # Get hospital - bed occupation happens at delivery
     hospital = get_best_hospital(lat, lng, desc, "emergency", risk)
     hospital_id = None
     hospital_name = None
     if hospital:
         hospital_id = hospital["id"]
         hospital_name = hospital.get("name")
-        occupy_bed(hospital_id)
 
     mark_ambulance_dispatched(amb_id, queued_entry["case_id"], risk)
     schedule_release(amb_id, risk, eta, on_release_callback=_queue_resolve_callback,
@@ -77,13 +76,26 @@ def run_decision_engine(
     caller_phone: str = "Unknown",
 ) -> dict:
 
+    # ── Input sanitization
+    description = sanitize_input(description)
+    caller_name = sanitize_input(caller_name)[:100] if caller_name else "Anonymous"
+    caller_phone = sanitize_input(caller_phone)[:20] if caller_phone else "Unknown"
+
     # ── Input validation
     if not description or not str(description).strip():
         return {"success": False, "error": "Description is required"}
 
     # Validate coordinates
-    if not (-90 <= incident_lat <= 90) or not (-180 <= incident_lng <= 180):
-        return {"success": False, "error": "Invalid coordinates. Lat must be -90 to 90, Lng -180 to 180"}
+    valid, error_msg = validate_coordinates(incident_lat, incident_lng)
+    if not valid:
+        return {"success": False, "error": error_msg}
+
+    # Validate caller phone format (basic)
+    if caller_phone and caller_phone != "Unknown":
+        # Remove non-digit characters for basic validation
+        phone_digits = ''.join(c for c in caller_phone if c.isdigit())
+        if phone_digits and len(phone_digits) < 5:
+            caller_phone = "Unknown"
 
     # ── 1. Triage
     triage = predict_risk(description)
@@ -92,7 +104,7 @@ def run_decision_engine(
     risk = triage["risk_level"]
 
     # ── 2. Dispatch
-    case_id   = "EM-" + str(uuid.uuid4())[:8].upper()
+    case_id   = "EM-" + str(uuid.uuid4()).upper()  # Full UUID for uniqueness
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ambulance = get_nearest_ambulance(incident_lat, incident_lng, risk)
 
@@ -112,7 +124,7 @@ def run_decision_engine(
         }
 
     if ambulance:
-        # Occupy ICU bed when ambulance is dispatched
+        # Hospital assignment - bed will be occupied when patient is delivered
         hospital_id = None
         hospital_lat = None
         hospital_lng = None
@@ -120,7 +132,8 @@ def run_decision_engine(
             hospital_id = hospital["id"]
             hospital_lat = hospital.get("lat")
             hospital_lng = hospital.get("lng")
-            occupy_bed(hospital_id)
+            # Note: Bed occupation happens at delivery, not at dispatch
+            # This prevents double-counting issues
 
         mark_ambulance_dispatched(ambulance["id"], case_id, risk)
 
@@ -243,8 +256,9 @@ def run_decision_engine(
     # ── 5. Persist
     try:
         save_case(response)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to save case {case_id}: {e}")
 
     return response
 

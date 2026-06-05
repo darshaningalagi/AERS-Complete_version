@@ -77,16 +77,30 @@ def init_db():
             status        TEXT,
             error         TEXT
         );
+
+        -- Create indexes for better query performance
+        CREATE INDEX IF NOT EXISTS idx_cases_case_id ON cases(case_id);
+        CREATE INDEX IF NOT EXISTS idx_cases_timestamp ON cases(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_cases_risk_level ON cases(risk_level);
+        CREATE INDEX IF NOT EXISTS idx_cases_ambulance_id ON cases(ambulance_id);
+        CREATE INDEX IF NOT EXISTS idx_cases_hospital_id ON cases(hospital_id);
+        CREATE INDEX IF NOT EXISTS idx_cases_caller_phone ON cases(caller_phone);
+
+        CREATE INDEX IF NOT EXISTS idx_ambulance_events_amb_id ON ambulance_events(amb_id);
+        CREATE INDEX IF NOT EXISTS idx_ambulance_events_case_id ON ambulance_events(case_id);
+
+        CREATE INDEX IF NOT EXISTS idx_sim_runs_sim_id ON sim_runs(sim_id);
+        CREATE INDEX IF NOT EXISTS idx_sim_runs_status ON sim_runs(status);
         """)
         # Add missing columns if they don't exist (migration)
         try:
             conn.execute("ALTER TABLE cases ADD COLUMN delivery_status TEXT DEFAULT 'ongoing'")
-        except:
-            pass
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         try:
             conn.execute("ALTER TABLE cases ADD COLUMN delivery_time TEXT")
-        except:
-            pass
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     print(f"[DB] Initialized at {DB_PATH}")
 
 

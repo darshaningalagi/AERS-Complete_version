@@ -242,18 +242,28 @@
 
         .tracking-map {
             height: 350px;
+            min-height: 350px;
             background: var(--bg);
             border-radius: 8px;
             margin-top: 1rem;
             position: relative;
             overflow: hidden;
             border: 2px solid var(--border);
+            display: block;
         }
 
         #patient-map {
-            height: 100%;
-            width: 100%;
+            height: 350px !important;
+            width: 100% !important;
+            min-height: 350px;
             border-radius: 6px;
+            z-index: 1;
+        }
+
+        /* Fix for Leaflet in hidden containers */
+        .leaflet-container {
+            height: 100% !important;
+            width: 100% !important;
         }
 
         .map-legend {
@@ -595,68 +605,110 @@
         });
 
         function initPatientMap(lat, lng) {
-            if (patientMap) {
-                patientMap.setView([lat, lng], 14);
+            // Wait for container to be visible
+            const mapContainer = document.getElementById('patient-map');
+            if (!mapContainer || mapContainer.offsetHeight === 0) {
+                console.log('Map container not ready, delaying initialization');
+                setTimeout(() => initPatientMap(lat, lng), 100);
                 return;
             }
-            patientMap = L.map('patient-map').setView([lat, lng], 14);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap'
-            }).addTo(patientMap);
+
+            // Remove existing map if any
+            if (patientMap) {
+                patientMap.remove();
+                patientMap = null;
+            }
+
+            try {
+                patientMap = L.map('patient-map', {
+                    center: [lat, lng],
+                    zoom: 14,
+                    zoomControl: true,
+                    scrollWheelZoom: true
+                });
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors',
+                    maxZoom: 19
+                }).addTo(patientMap);
+
+                // Force proper sizing
+                setTimeout(() => {
+                    if (patientMap) {
+                        patientMap.invalidateSize();
+                    }
+                }, 200);
+
+            } catch (e) {
+                console.error('Error initializing map:', e);
+            }
         }
 
         function updateTrackingMap(patientLat, patientLng, ambLat, ambLng, ambId, hospLat, hospLng, hospName) {
-            if (!patientMap) initPatientMap(patientLat, patientLng);
+            // Initialize map if not done
+            if (!patientMap) {
+                initPatientMap(patientLat, patientLng);
+                // Wait for map to initialize
+                setTimeout(() => updateTrackingMap(patientLat, patientLng, ambLat, ambLng, ambId, hospLat, hospLng, hospName), 300);
+                return;
+            }
+
+            // Ensure map is properly sized
+            patientMap.invalidateSize();
 
             // Patient location marker
-            if (!patientLocationMarker) {
-                patientLocationMarker = L.marker([patientLat, patientLng], { icon: patientIcon })
-                    .addTo(patientMap)
-                    .bindPopup('<b>Your Location</b><br>Emergency location');
-            } else {
-                patientLocationMarker.setLatLng([patientLat, patientLng]);
-            }
-
-            // Ambulance marker
-            if (ambLat && ambLng) {
-                if (!ambulanceMarker) {
-                    ambulanceMarker = L.marker([ambLat, ambLng], { icon: ambIcon })
+            try {
+                if (!patientLocationMarker) {
+                    patientLocationMarker = L.marker([patientLat, patientLng], { icon: patientIcon })
                         .addTo(patientMap)
-                        .bindPopup(`<b>Ambulance ${ambId}</b><br>On the way to you`);
+                        .bindPopup('<b>Your Location</b><br>Emergency location');
                 } else {
-                    ambulanceMarker.setLatLng([ambLat, ambLng]);
-                    ambulanceMarker.setPopupContent(`<b>Ambulance ${ambId}</b><br>On the way to you`);
-                }
-            }
-
-            // Hospital marker
-            if (hospLat && hospLng) {
-                if (!hospitalMarker) {
-                    hospitalMarker = L.marker([hospLat, hospLng], { icon: hospIcon })
-                        .addTo(patientMap)
-                        .bindPopup(`<b>${hospName}</b><br>Destination hospital`);
-                } else {
-                    hospitalMarker.setLatLng([hospLat, hospLng]);
-                    hospitalMarker.setPopupContent(`<b>${hospName}</b><br>Destination hospital`);
+                    patientLocationMarker.setLatLng([patientLat, patientLng]);
                 }
 
-                // Draw route from patient to hospital after pickup
-                if (routeLine) {
-                    patientMap.removeLayer(routeLine);
+                // Ambulance marker
+                if (ambLat && ambLng) {
+                    if (!ambulanceMarker) {
+                        ambulanceMarker = L.marker([ambLat, ambLng], { icon: ambIcon })
+                            .addTo(patientMap)
+                            .bindPopup(`<b>Ambulance ${ambId}</b><br>On the way to you`);
+                    } else {
+                        ambulanceMarker.setLatLng([ambLat, ambLng]);
+                        ambulanceMarker.setPopupContent(`<b>Ambulance ${ambId}</b><br>On the way to you`);
+                    }
                 }
-                routeLine = L.polyline([
+
+                // Hospital marker
+                if (hospLat && hospLng) {
+                    if (!hospitalMarker) {
+                        hospitalMarker = L.marker([hospLat, hospLng], { icon: hospIcon })
+                            .addTo(patientMap)
+                            .bindPopup(`<b>${hospName}</b><br>Destination hospital`);
+                    } else {
+                        hospitalMarker.setLatLng([hospLat, hospLng]);
+                        hospitalMarker.setPopupContent(`<b>${hospName}</b><br>Destination hospital`);
+                    }
+
+                    // Draw route from patient to hospital after pickup
+                    if (routeLine) {
+                        patientMap.removeLayer(routeLine);
+                    }
+                    routeLine = L.polyline([
+                        [patientLat, patientLng],
+                        [hospLat, hospLng]
+                    ], { color: '#16A34A', weight: 4, dashArray: '10, 10' }).addTo(patientMap);
+                }
+
+                // Fit bounds to show all markers
+                const bounds = L.latLngBounds([
                     [patientLat, patientLng],
-                    [hospLat, hospLng]
-                ], { color: '#16A34A', weight: 4, dashArray: '10, 10' }).addTo(patientMap);
+                    ...(ambLat && ambLng ? [[ambLat, ambLng]] : []),
+                    ...(hospLat && hospLng ? [[hospLat, hospLng]] : [])
+                ]);
+                patientMap.fitBounds(bounds, { padding: [50, 50] });
+            } catch (e) {
+                console.error('Error updating tracking map:', e);
             }
-
-            // Fit bounds to show all markers
-            const bounds = L.latLngBounds([
-                [patientLat, patientLng],
-                ...(ambLat && ambLng ? [[ambLat, ambLng]] : []),
-                ...(hospLat && hospLng ? [[hospLat, hospLng]] : [])
-            ]);
-            patientMap.fitBounds(bounds, { padding: [50, 50] });
         }
 
         // Connect to WebSocket
@@ -752,6 +804,13 @@
                 } else if (data.status === 'dispatched') {
                     document.getElementById('notification-panel').classList.add('show');
                     document.getElementById('queue-panel').classList.remove('show');
+
+                    // Invalidate map size when panel becomes visible
+                    setTimeout(() => {
+                        if (patientMap) {
+                            patientMap.invalidateSize();
+                        }
+                    }, 100);
 
                     if (data.ambulance) {
                         document.getElementById('ambulance-id').textContent = data.ambulance.id || '--';
@@ -852,6 +911,16 @@
                         document.getElementById('case-status').textContent = 'Queued';
                     } else {
                         document.getElementById('notification-panel').classList.add('show');
+
+                        // Initialize and invalidate map when panel becomes visible
+                        setTimeout(() => {
+                            if (!patientMap) {
+                                initPatientMap(patientLat, patientLng);
+                            } else {
+                                patientMap.invalidateSize();
+                            }
+                        }, 100);
+
                         if (result.dispatch.ambulance) {
                             document.getElementById('ambulance-id').textContent = result.dispatch.ambulance.id;
                             document.getElementById('driver-name').textContent = result.dispatch.ambulance.driver;
